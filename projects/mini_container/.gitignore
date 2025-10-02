@@ -1,0 +1,3 @@
+build/
+*.o
+mini_container
