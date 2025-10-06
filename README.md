@@ -14,3 +14,5 @@ Download Markdown Viewer: https://typora.io/
 #StopTheSlop
 
 __*End The 2 year Code-Commit/Comment/Post (CCP)-Reject Cycle*__
+
+#GoOffline
