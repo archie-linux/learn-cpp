@@ -8,6 +8,6 @@ With regards to the learning aspect, you won't be building anything from scratch
 
 All of these are **extras** anyway to let the programming skills not rot in dust. I have been saying this since the day I started my github. It's purely for upskilling purposes but unintentionally happened to attract companies sending out rejects for even thinking of committing such a heinous crime. Like how dare you think for yourself and decide to invest in your own growth without seeking our advice first? 
 
-It has primarily been our job to tell you what to learn, what not to learn, which tech stack is the best and right for you and where you belong in the overall tech realm, and so and so. Furthermose, there is no ideal job out there that will fulfill all your needs. Very reason people work on personal projects to fill that void and gain a sense of accomplishment by working on things that would be considered "out-of-scope" in their day-to-day work.
+It has primarily been our job to tell you what to learn, what not to learn, which tech stack is the best and right for you and where you belong in the overall tech realm, and so and so. Furthermore, there is no ideal job out there that will fulfill all your needs. Very reason people work on personal projects to fill that void and gain a sense of accomplishment that would normally be considered as "out-of-scope" in their day-to-day work.
 
 Anyway coming back to the post, don't critique my technique too hard. Appreciate whatever you are getting for free on the Internet. 
