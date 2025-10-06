@@ -11066,7 +11066,8 @@ public:
         
         try 
         {
-            // RAII ensures cleanup even if exceptions occur
+            // RAII ensures cleanup even if 
+          exceptions occur
             auto dbConn = std::make_unique<DatabaseConnection>("postgresql://localhost:5432/mydb");
             LockGuard lock(dataMutex);  // Automatic unlocking
             
@@ -14112,3 +14113,2693 @@ int main()
 - Document when functions are intended for compile-time use
 
 This powerful feature set represents one of the most significant advances in modern C++, enabling efficient compile-time programming and optimization opportunities that were previously impossible.
+
+# Chapter 27-28: Exception Handling & Input/Output Streams
+
+## From Error Codes to Robust Programs: Mastering Error Handling and File I/O
+
+In previous chapters, we've built solid foundations in C++ programming. Now we'll explore two critical aspects of robust software: **exception handling** for graceful error management and **input/output streams** for data processing. These topics are essential for creating professional-grade applications that handle real-world scenarios reliably.
+
+---
+
+## 27.1 - Introduction to Exception Handling
+
+### The Problem: Traditional Error Handling
+
+Consider this traditional C-style error handling:
+
+```cpp
+#include <iostream>
+#include <cstdlib>
+
+// ❌ Traditional error handling with return codes
+enum ErrorCode { SUCCESS = 0, DIVIDE_BY_ZERO = 1, NEGATIVE_INPUT = 2 };
+
+ErrorCode divide(double a, double b, double& result) 
+{
+    if (b == 0.0) 
+    {
+        return DIVIDE_BY_ZERO;
+    }
+    
+    if (a < 0 || b < 0) 
+    {
+        return NEGATIVE_INPUT;
+    }
+    
+    result = a / b;
+    return SUCCESS;
+}
+
+ErrorCode sqrt_positive(double x, double& result) 
+{
+    if (x < 0) 
+    {
+        return NEGATIVE_INPUT;
+    }
+    
+    result = std::sqrt(x);
+    return SUCCESS;
+}
+
+int main() 
+{
+    double result1, result2, final_result;
+    
+    // Lots of error checking code!
+    ErrorCode err = divide(10.0, 2.0, result1);
+    if (err != SUCCESS) 
+    {
+        std::cout << "Division failed with error: " << err << "\n";
+        return 1;
+    }
+    
+    err = sqrt_positive(result1, result2);
+    if (err != SUCCESS) 
+    {
+        std::cout << "Square root failed with error: " << err << "\n";
+        return 1;
+    }
+    
+    err = divide(result2, 3.0, final_result);
+    if (err != SUCCESS) 
+    {
+        std::cout << "Final division failed with error: " << err << "\n";
+        return 1;
+    }
+    
+    std::cout << "Final result: " << final_result << "\n";
+    return 0;
+}
+```
+
+### The Solution: Exception Handling
+
+**Exceptions** provide a cleaner way to handle error conditions:
+
+```cpp
+#include <iostream>
+#include <stdexcept>
+#include <cmath>
+
+// ✅ Exception-based error handling
+class MathException : public std::runtime_error 
+{
+public:
+    MathException(const std::string& message) 
+        : std::runtime_error("Math Error: " + message) {}
+};
+
+class DivideByZeroException : public MathException 
+{
+public:
+    DivideByZeroException() 
+        : MathException("Division by zero attempted") {}
+};
+
+class NegativeInputException : public MathException 
+{
+public:
+    NegativeInputException(const std::string& operation) 
+        : MathException("Negative input not allowed for " + operation) {}
+};
+
+double divide(double a, double b) 
+{
+    if (b == 0.0) 
+    {
+        throw DivideByZeroException();
+    }
+    
+    return a / b;
+}
+
+double sqrt_positive(double x) 
+{
+    if (x < 0) 
+    {
+        throw NegativeInputException("square root");
+    }
+    
+    return std::sqrt(x);
+}
+
+int main() 
+{
+    try 
+    {
+        // Clean, readable code without error checking clutter
+        double result1 = divide(10.0, 2.0);
+        double result2 = sqrt_positive(result1);
+        double final_result = divide(result2, 3.0);
+        
+        std::cout << "Final result: " << final_result << "\n";
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Counter error: " << e.what() << "\n";
+        std::cout << "Final count: " << counter.getValue() << "\n";
+    }
+}
+
+int main() 
+{
+    demonstrateRAII();
+    return 0;
+}
+```
+
+---
+
+## 28.1 - Introduction to Input/Output Streams
+
+### Understanding the Stream Concept
+
+```cpp
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <iomanip>
+
+void demonstrateBasicStreams() 
+{
+    std::cout << "=== Basic Stream Concepts ===\n";
+    
+    // Standard streams
+    std::cout << "This goes to standard output (cout)\n";
+    std::cerr << "This goes to standard error (cerr)\n";
+    std::clog << "This goes to standard log (clog)\n";
+    
+    // String streams - treat strings like files
+    std::ostringstream oss;  // Output string stream
+    oss << "Hello, " << "World! " << 42 << " " << 3.14;
+    std::string result = oss.str();
+    std::cout << "String stream result: " << result << "\n";
+    
+    // Input string stream
+    std::istringstream iss("100 200 300 hello world");
+    int a, b, c;
+    std::string word1, word2;
+    
+    iss >> a >> b >> c >> word1 >> word2;
+    std::cout << "Parsed from string: " << a << ", " << b << ", " << c 
+              << ", '" << word1 << "', '" << word2 << "'\n";
+    
+    // Check stream state
+    if (iss.good()) 
+    {
+        std::cout << "String stream is in good state\n";
+    }
+}
+
+void demonstrateStreamStates() 
+{
+    std::cout << "\n--- Stream States ---\n";
+    
+    std::istringstream iss("123 abc 456");
+    int number;
+    
+    // Read first number - should succeed
+    iss >> number;
+    std::cout << "First read: " << number << " (good: " << iss.good() << ")\n";
+    
+    // Try to read string as number - should fail
+    iss >> number;
+    std::cout << "Second read failed (good: " << iss.good() 
+              << ", fail: " << iss.fail() 
+              << ", bad: " << iss.bad() 
+              << ", eof: " << iss.eof() << ")\n";
+    
+    // Clear error state
+    iss.clear();
+    
+    // Skip the invalid input
+    std::string invalidInput;
+    iss >> invalidInput;
+    std::cout << "Skipped invalid input: '" << invalidInput << "'\n";
+    
+    // Now we can read the last number
+    iss >> number;
+    std::cout << "Third read: " << number << " (good: " << iss.good() << ")\n";
+}
+
+void demonstrateStreamFormatting() 
+{
+    std::cout << "\n--- Stream Formatting ---\n";
+    
+    double pi = 3.14159265359;
+    int value = 255;
+    
+    // Precision control
+    std::cout << "Default precision: " << pi << "\n";
+    std::cout << std::setprecision(3) << "3 decimal places: " << pi << "\n";
+    std::cout << std::setprecision(6) << std::fixed << "Fixed 6 places: " << pi << "\n";
+    std::cout << std::scientific << "Scientific notation: " << pi << "\n";
+    std::cout << std::defaultfloat;  // Reset to default
+    
+    // Width and alignment
+    std::cout << "\n--- Width and Alignment ---\n";
+    std::cout << "|" << std::setw(10) << "Hello" << "|\n";
+    std::cout << "|" << std::setw(10) << std::left << "Hello" << "|\n";
+    std::cout << "|" << std::setw(10) << std::right << "Hello" << "|\n";
+    std::cout << "|" << std::setw(10) << std::setfill('*') << "Hello" << "|\n";
+    std::cout << std::setfill(' ');  // Reset fill character
+    
+    // Number bases
+    std::cout << "\n--- Number Bases ---\n";
+    std::cout << "Decimal: " << value << "\n";
+    std::cout << "Hex: " << std::hex << value << "\n";
+    std::cout << "Hex with prefix: " << std::showbase << value << "\n";
+    std::cout << "Octal: " << std::oct << value << "\n";
+    std::cout << std::dec << std::noshowbase;  // Reset to decimal
+    
+    // Boolean formatting
+    std::cout << "\n--- Boolean Formatting ---\n";
+    bool flag = true;
+    std::cout << "Default bool: " << flag << "\n";
+    std::cout << std::boolalpha << "Alpha bool: " << flag << "\n";
+    std::cout << std::noboolalpha;  // Reset
+}
+
+int main() 
+{
+    demonstrateBasicStreams();
+    demonstrateStreamStates();
+    demonstrateStreamFormatting();
+    return 0;
+}
+```
+
+---
+
+## 28.2 - File Input/Output Operations
+
+### Reading and Writing Files
+
+```cpp
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <stdexcept>
+
+class FileHandler 
+{
+public:
+    // ✅ Write data to file with error handling
+    static void writeToFile(const std::string& filename, const std::vector<std::string>& data) 
+    {
+        std::ofstream outFile(filename);
+        
+        if (!outFile.is_open()) 
+        {
+            throw std::runtime_error("Cannot open file for writing: " + filename);
+        }
+        
+        std::cout << "Writing to file: " << filename << "\n";
+        
+        for (const auto& line : data) 
+        {
+            outFile << line << "\n";
+            
+            // Check for write errors
+            if (outFile.fail()) 
+            {
+                throw std::runtime_error("Write error occurred");
+            }
+        }
+        
+        std::cout << "Successfully wrote " << data.size() << " lines\n";
+        // File automatically closed when outFile goes out of scope
+    }
+    
+    // ✅ Read data from file with error handling
+    static std::vector<std::string> readFromFile(const std::string& filename) 
+    {
+        std::ifstream inFile(filename);
+        
+        if (!inFile.is_open()) 
+        {
+            throw std::runtime_error("Cannot open file for reading: " + filename);
+        }
+        
+        std::cout << "Reading from file: " << filename << "\n";
+        
+        std::vector<std::string> lines;
+        std::string line;
+        
+        while (std::getline(inFile, line)) 
+        {
+            lines.push_back(line);
+        }
+        
+        // Check if we stopped due to error or EOF
+        if (inFile.bad()) 
+        {
+            throw std::runtime_error("Read error occurred");
+        }
+        
+        std::cout << "Successfully read " << lines.size() << " lines\n";
+        return lines;
+    }
+    
+    // ✅ Append data to existing file
+    static void appendToFile(const std::string& filename, const std::string& data) 
+    {
+        std::ofstream outFile(filename, std::ios::app);  // Append mode
+        
+        if (!outFile.is_open()) 
+        {
+            throw std::runtime_error("Cannot open file for appending: " + filename);
+        }
+        
+        outFile << data << "\n";
+        
+        if (outFile.fail()) 
+        {
+            throw std::runtime_error("Append error occurred");
+        }
+        
+        std::cout << "Successfully appended data to " << filename << "\n";
+    }
+    
+    // ✅ Binary file operations
+    static void writeBinaryData(const std::string& filename, const std::vector<int>& data) 
+    {
+        std::ofstream outFile(filename, std::ios::binary);
+        
+        if (!outFile.is_open()) 
+        {
+            throw std::runtime_error("Cannot open file for binary writing: " + filename);
+        }
+        
+        // Write the size first
+        size_t size = data.size();
+        outFile.write(reinterpret_cast<const char*>(&size), sizeof(size));
+        
+        // Write the data
+        outFile.write(reinterpret_cast<const char*>(data.data()), 
+                     data.size() * sizeof(int));
+        
+        if (outFile.fail()) 
+        {
+            throw std::runtime_error("Binary write error occurred");
+        }
+        
+        std::cout << "Successfully wrote " << data.size() << " integers to binary file\n";
+    }
+    
+    static std::vector<int> readBinaryData(const std::string& filename) 
+    {
+        std::ifstream inFile(filename, std::ios::binary);
+        
+        if (!inFile.is_open()) 
+        {
+            throw std::runtime_error("Cannot open file for binary reading: " + filename);
+        }
+        
+        // Read the size first
+        size_t size;
+        inFile.read(reinterpret_cast<char*>(&size), sizeof(size));
+        
+        if (inFile.fail()) 
+        {
+            throw std::runtime_error("Failed to read data size");
+        }
+        
+        // Read the data
+        std::vector<int> data(size);
+        inFile.read(reinterpret_cast<char*>(data.data()), size * sizeof(int));
+        
+        if (inFile.fail()) 
+        {
+            throw std::runtime_error("Failed to read binary data");
+        }
+        
+        std::cout << "Successfully read " << data.size() << " integers from binary file\n";
+        return data;
+    }
+};
+
+void demonstrateTextFileOperations() 
+{
+    std::cout << "=== Text File Operations ===\n";
+    
+    try 
+    {
+        // Create sample data
+        std::vector<std::string> sampleData = {
+            "Line 1: Hello, World!",
+            "Line 2: This is a test file",
+            "Line 3: With multiple lines",
+            "Line 4: For demonstration"
+        };
+        
+        // Write to file
+        FileHandler::writeToFile("sample.txt", sampleData);
+        
+        // Read from file
+        auto readData = FileHandler::readFromFile("sample.txt");
+        
+        std::cout << "\n--- File Contents ---\n";
+        for (size_t i = 0; i < readData.size(); ++i) 
+        {
+            std::cout << i + 1 << ": " << readData[i] << "\n";
+        }
+        
+        // Append to file
+        FileHandler::appendToFile("sample.txt", "Line 5: Appended line");
+        
+        // Read again to show appended content
+        readData = FileHandler::readFromFile("sample.txt");
+        
+        std::cout << "\n--- After Appending ---\n";
+        std::cout << "Last line: " << readData.back() << "\n";
+        
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "File operation error: " << e.what() << "\n";
+    }
+}
+
+void demonstrateBinaryFileOperations() 
+{
+    std::cout << "\n=== Binary File Operations ===\n";
+    
+    try 
+    {
+        // Create sample binary data
+        std::vector<int> numbers;
+        for (int i = 1; i <= 10; ++i) 
+        {
+            numbers.push_back(i * i);  // Square numbers
+        }
+        
+        std::cout << "Original data: ";
+        for (int num : numbers) 
+        {
+            std::cout << num << " ";
+        }
+        std::cout << "\n";
+        
+        // Write binary data
+        FileHandler::writeBinaryData("numbers.bin", numbers);
+        
+        // Read binary data
+        auto readNumbers = FileHandler::readBinaryData("numbers.bin");
+        
+        std::cout << "Read data: ";
+        for (int num : readNumbers) 
+        {
+            std::cout << num << " ";
+        }
+        std::cout << "\n";
+        
+        // Verify data integrity
+        bool dataMatch = (numbers == readNumbers);
+        std::cout << "Data integrity check: " << (dataMatch ? "PASSED" : "FAILED") << "\n";
+        
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Binary file operation error: " << e.what() << "\n";
+    }
+}
+```
+
+### Advanced File Operations
+
+```cpp
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <chrono>
+#include <iomanip>
+
+namespace fs = std::filesystem;
+
+class AdvancedFileOperations 
+{
+public:
+    // ✅ Get file information
+    static void displayFileInfo(const std::string& filename) 
+    {
+        std::cout << "\n=== File Information: " << filename << " ===\n";
+        
+        try 
+        {
+            if (!fs::exists(filename)) 
+            {
+                std::cout << "File does not exist\n";
+                return;
+            }
+            
+            auto fileSize = fs::file_size(filename);
+            auto lastWrite = fs::last_write_time(filename);
+            auto perms = fs::status(filename).permissions();
+            
+            std::cout << "Size: " << fileSize << " bytes\n";
+            
+            // Convert file time to system time for display
+            auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                lastWrite - fs::file_time_type::clock::now() + std::chrono::system_clock::now()
+            );
+            auto time_t = std::chrono::system_clock::to_time_t(sctp);
+            
+            std::cout << "Last modified: " << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << "\n";
+            
+            // Check permissions
+            std::cout << "Permissions: ";
+            std::cout << ((perms & fs::perms::owner_read) != fs::perms::none ? "r" : "-");
+            std::cout << ((perms & fs::perms::owner_write) != fs::perms::none ? "w" : "-");
+            std::cout << ((perms & fs::perms::owner_exec) != fs::perms::none ? "x" : "-");
+            std::cout << "\n";
+            
+        }
+        catch (const fs::filesystem_error& e) 
+        {
+            std::cout << "Filesystem error: " << e.what() << "\n";
+        }
+    }
+    
+    // ✅ Random access file operations
+    static void demonstrateRandomAccess(const std::string& filename) 
+    {
+        std::cout << "\n=== Random Access Demo ===\n";
+        
+        try 
+        {
+            // Create a file with known content
+            {
+                std::ofstream outFile(filename);
+                for (int i = 0; i < 10; ++i) 
+                {
+                    outFile << "Line " << std::setfill('0') << std::setw(2) << i << ": Some content\n";
+                }
+            }
+            
+            // Random access reading
+            std::ifstream inFile(filename);
+            
+            if (!inFile.is_open()) 
+            {
+                throw std::runtime_error("Cannot open file for random access");
+            }
+            
+            // Seek to different positions
+            std::cout << "File content at different positions:\n";
+            
+            // Read from beginning
+            inFile.seekg(0, std::ios::beg);
+            std::string line;
+            std::getline(inFile, line);
+            std::cout << "Beginning: " << line << "\n";
+            
+            // Read from middle
+            inFile.seekg(100, std::ios::beg);  // Seek to position 100
+            std::getline(inFile, line);
+            std::cout << "Position 100: " << line << "\n";
+            
+            // Read from end
+            inFile.seekg(-50, std::ios::end);  // Seek 50 characters from end
+            std::getline(inFile, line);
+            std::cout << "Near end: " << line << "\n";
+            
+            // Get current position
+            auto currentPos = inFile.tellg();
+            std::cout << "Current position: " << currentPos << "\n";
+            
+        }
+        catch (const std::exception& e) 
+        {
+            std::cout << "Random access error: " << e.what() << "\n";
+        }
+    }
+    
+    // ✅ File copying with progress
+    static void copyFileWithProgress(const std::string& source, const std::string& dest) 
+    {
+        std::cout << "\n=== File Copy with Progress ===\n";
+        
+        try 
+        {
+            std::ifstream src(source, std::ios::binary);
+            std::ofstream dst(dest, std::ios::binary);
+            
+            if (!src.is_open()) 
+            {
+                throw std::runtime_error("Cannot open source file: " + source);
+            }
+            
+            if (!dst.is_open()) 
+            {
+                throw std::runtime_error("Cannot open destination file: " + dest);
+            }
+            
+            // Get file size for progress calculation
+            src.seekg(0, std::ios::end);
+            std::streamsize totalSize = src.tellg();
+            src.seekg(0, std::ios::beg);
+            
+            std::cout << "Copying " << totalSize << " bytes from " << source << " to " << dest << "\n";
+            
+            const size_t bufferSize = 4096;
+            char buffer[bufferSize];
+            std::streamsize copiedBytes = 0;
+            
+            while (src.read(buffer, bufferSize) || src.gcount() > 0) 
+            {
+                std::streamsize bytesRead = src.gcount();
+                dst.write(buffer, bytesRead);
+                
+                if (dst.fail()) 
+                {
+                    throw std::runtime_error("Write error during copy");
+                }
+                
+                copiedBytes += bytesRead;
+                
+                // Show progress
+                int progress = static_cast<int>((copiedBytes * 100) / totalSize);
+                std::cout << "\rProgress: " << progress << "% (" << copiedBytes << "/" << totalSize << " bytes)";
+                std::cout.flush();
+            }
+            
+            std::cout << "\nCopy completed successfully!\n";
+            
+        }
+        catch (const std::exception& e) 
+        {
+            std::cout << "\nCopy error: " << e.what() << "\n";
+        }
+    }
+    
+    // ✅ Directory operations
+    static void listDirectory(const std::string& path) 
+    {
+        std::cout << "\n=== Directory Listing: " << path << " ===\n";
+        
+        try 
+        {
+            if (!fs::exists(path) || !fs::is_directory(path)) 
+            {
+                std::cout << "Path does not exist or is not a directory\n";
+                return;
+            }
+            
+            std::cout << std::left << std::setw(20) << "Name" 
+                      << std::setw(10) << "Type" 
+                      << std::setw(15) << "Size" << "\n";
+            std::cout << std::string(45, '-') << "\n";
+            
+            for (const auto& entry : fs::directory_iterator(path)) 
+            {
+                std::string name = entry.path().filename().string();
+                std::string type = entry.is_directory() ? "DIR" : "FILE";
+                std::string size = entry.is_directory() ? "-" : std::to_string(entry.file_size());
+                
+                std::cout << std::left << std::setw(20) << name 
+                          << std::setw(10) << type 
+                          << std::setw(15) << size << "\n";
+            }
+            
+        }
+        catch (const fs::filesystem_error& e) 
+        {
+            std::cout << "Directory listing error: " << e.what() << "\n";
+        }
+    }
+};
+
+void demonstrateAdvancedFileOperations() 
+{
+    std::cout << "=== Advanced File Operations ===\n";
+    
+    // Create a test file first
+    try 
+    {
+        {
+            std::ofstream testFile("test_file.txt");
+            testFile << "This is a test file for advanced operations.\n";
+            testFile << "It contains multiple lines of text.\n";
+            testFile << "We'll use it to demonstrate various file operations.\n";
+        }
+        
+        AdvancedFileOperations::displayFileInfo("test_file.txt");
+        AdvancedFileOperations::demonstrateRandomAccess("random_access_test.txt");
+        AdvancedFileOperations::copyFileWithProgress("test_file.txt", "copied_file.txt");
+        AdvancedFileOperations::listDirectory(".");
+        
+        // Display info for the copied file
+        AdvancedFileOperations::displayFileInfo("copied_file.txt");
+        
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Advanced operations error: " << e.what() << "\n";
+    }
+}
+
+int main() 
+{
+    demonstrateTextFileOperations();
+    demonstrateBinaryFileOperations();
+    demonstrateAdvancedFileOperations();
+    return 0;
+}
+```
+
+---
+
+## 28.3 - String Streams for Data Processing
+
+### Parsing and Formatting with String Streams
+
+```cpp
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <iomanip>
+#include <stdexcept>
+
+class DataParser 
+{
+public:
+    // ✅ Parse CSV-like data
+    static std::vector<std::vector<std::string>> parseCSV(const std::string& csvData, char delimiter = ',') 
+    {
+        std::vector<std::vector<std::string>> result;
+        std::istringstream dataStream(csvData);
+        std::string line;
+        
+        while (std::getline(dataStream, line)) 
+        {
+            std::vector<std::string> row;
+            std::istringstream lineStream(line);
+            std::string field;
+            
+            while (std::getline(lineStream, field, delimiter)) 
+            {
+                // Trim whitespace
+                field.erase(0, field.find_first_not_of(" \t"));
+                field.erase(field.find_last_not_of(" \t") + 1);
+                row.push_back(field);
+            }
+            
+            if (!row.empty()) 
+            {
+                result.push_back(row);
+            }
+        }
+        
+        return result;
+    }
+    
+    // ✅ Convert structured data to CSV
+    static std::string toCSV(const std::vector<std::vector<std::string>>& data, char delimiter = ',') 
+    {
+        std::ostringstream csvStream;
+        
+        for (size_t i = 0; i < data.size(); ++i) 
+        {
+            const auto& row = data[i];
+            
+            for (size_t j = 0; j < row.size(); ++j) 
+            {
+                csvStream << row[j];
+                if (j < row.size() - 1) 
+                {
+                    csvStream << delimiter;
+                }
+            }
+            
+            if (i < data.size() - 1) 
+            {
+                csvStream << "\n";
+            }
+        }
+        
+        return csvStream.str();
+    }
+    
+    // ✅ Parse numbers with error handling
+    static std::vector<double> parseNumbers(const std::string& input) 
+    {
+        std::vector<double> numbers;
+        std::istringstream stream(input);
+        std::string token;
+        
+        while (stream >> token) 
+        {
+            try 
+            {
+                double value = std::stod(token);
+                numbers.push_back(value);
+            }
+            catch (const std::invalid_argument&) 
+            {
+                std::cout << "Warning: Skipping invalid number: '" << token << "'\n";
+            }
+            catch (const std::out_of_range&) 
+            {
+                std::cout << "Warning: Number out of range: '" << token << "'\n";
+            }
+        }
+        
+        return numbers;
+    }
+    
+    // ✅ Advanced parsing with multiple data types
+    struct PersonRecord 
+    {
+        std::string name;
+        int age;
+        double salary;
+        bool isActive;
+        
+        void display() const 
+        {
+            std::cout << "Name: " << name 
+                      << ", Age: " << age 
+                      << ", Salary: $" << std::fixed << std::setprecision(2) << salary 
+                      << ", Active: " << (isActive ? "Yes" : "No") << "\n";
+        }
+    };
+    
+    static std::vector<PersonRecord> parsePersonRecords(const std::string& data) 
+    {
+        std::vector<PersonRecord> records;
+        std::istringstream dataStream(data);
+        std::string line;
+        
+        while (std::getline(dataStream, line)) 
+        {
+            if (line.empty()) continue;
+            
+            std::istringstream lineStream(line);
+            PersonRecord person;
+            
+            // Parse name (may contain spaces)
+            if (!std::getline(lineStream, person.name, ',')) 
+            {
+                continue;  // Skip invalid line
+            }
+            
+            // Trim whitespace from name
+            person.name.erase(0, person.name.find_first_not_of(" \t"));
+            person.name.erase(person.name.find_last_not_of(" \t") + 1);
+            
+            // Parse age
+            std::string ageStr;
+            if (!std::getline(lineStream, ageStr, ',')) 
+            {
+                continue;
+            }
+            
+            try 
+            {
+                person.age = std::stoi(ageStr);
+            }
+            catch (...) 
+            {
+                std::cout << "Warning: Invalid age for " << person.name << "\n";
+                continue;
+            }
+            
+            // Parse salary
+            std::string salaryStr;
+            if (!std::getline(lineStream, salaryStr, ',')) 
+            {
+                continue;
+            }
+            
+            try 
+            {
+                person.salary = std::stod(salaryStr);
+            }
+            catch (...) 
+            {
+                std::cout << "Warning: Invalid salary for " << person.name << "\n";
+                continue;
+            }
+            
+            // Parse active status
+            std::string activeStr;
+            if (!std::getline(lineStream, activeStr)) 
+            {
+                continue;
+            }
+            
+            // Trim and convert to lowercase for comparison
+            activeStr.erase(0, activeStr.find_first_not_of(" \t"));
+            activeStr.erase(activeStr.find_last_not_of(" \t") + 1);
+            std::transform(activeStr.begin(), activeStr.end(), activeStr.begin(), ::tolower);
+            
+            person.isActive = (activeStr == "true" || activeStr == "yes" || activeStr == "1");
+            
+            records.push_back(person);
+        }
+        
+        return records;
+    }
+};
+
+class ReportGenerator 
+{
+public:
+    // ✅ Generate formatted report
+    static std::string generateSalesReport(const std::vector<std::pair<std::string, double>>& salesData) 
+    {
+        std::ostringstream report;
+        
+        report << "SALES REPORT\n";
+        report << std::string(50, '=') << "\n\n";
+        
+        report << std::left << std::setw(30) << "Product" 
+               << std::right << std::setw(15) << "Sales ($)" << "\n";
+        report << std::string(50, '-') << "\n";
+        
+        double totalSales = 0.0;
+        
+        for (const auto& [product, sales] : salesData) 
+        {
+            report << std::left << std::setw(30) << product 
+                   << std::right << std::setw(15) << std::fixed << std::setprecision(2) << sales << "\n";
+            totalSales += sales;
+        }
+        
+        report << std::string(50, '-') << "\n";
+        report << std::left << std::setw(30) << "TOTAL" 
+               << std::right << std::setw(15) << std::fixed << std::setprecision(2) << totalSales << "\n";
+        report << std::string(50, '=') << "\n";
+        
+        return report.str();
+    }
+    
+    // ✅ Generate HTML report
+    static std::string generateHTMLTable(const std::vector<DataParser::PersonRecord>& records) 
+    {
+        std::ostringstream html;
+        
+        html << "<!DOCTYPE html>\n";
+        html << "<html>\n<head>\n<title>Employee Records</title>\n</head>\n<body>\n";
+        html << "<h1>Employee Records</h1>\n";
+        html << "<table border='1' style='border-collapse: collapse;'>\n";
+        html << "<tr><th>Name</th><th>Age</th><th>Salary</th><th>Status</th></tr>\n";
+        
+        for (const auto& person : records) 
+        {
+            html << "<tr>";
+            html << "<td>" << person.name << "</td>";
+            html << "<td>" << person.age << "</td>";
+            html << "<td>$" << std::fixed << std::setprecision(2) << person.salary << "</td>";
+            html << "<td>" << (person.isActive ? "Active" : "Inactive") << "</td>";
+            html << "</tr>\n";
+        }
+        
+        html << "</table>\n</body>\n</html>";
+        
+        return html.str();
+    }
+};
+
+void demonstrateStringStreams() 
+{
+    std::cout << "=== String Streams Demonstration ===\n";
+    
+    // CSV parsing demonstration
+    std::cout << "\n--- CSV Parsing ---\n";
+    std::string csvData = 
+        "Name,Age,Department\n"
+        "John Doe,30,Engineering\n"
+        "Jane Smith,25,Marketing\n"
+        "Bob Johnson,35,Sales\n";
+    
+    auto parsedData = DataParser::parseCSV(csvData);
+    
+    std::cout << "Parsed CSV data:\n";
+    for (const auto& row : parsedData) 
+    {
+        for (size_t i = 0; i < row.size(); ++i) 
+        {
+            std::cout << row[i];
+            if (i < row.size() - 1) std::cout << " | ";
+        }
+        std::cout << "\n";
+    }
+    
+    // Numbers parsing
+    std::cout << "\n--- Number Parsing ---\n";
+    std::string numberData = "3.14 42 invalid 2.71 overflow 99.9";
+    auto numbers = DataParser::parseNumbers(numberData);
+    
+    std::cout << "Parsed numbers: ";
+    for (double num : numbers) 
+    {
+        std::cout << num << " ";
+    }
+    std::cout << "\n";
+    
+    // Complex record parsing
+    std::cout << "\n--- Person Record Parsing ---\n";
+    std::string personData = 
+        "Alice Johnson, 28, 65000.50, true\n"
+        "Bob Smith, 35, 75000.75, false\n"
+        "Carol Davis, 42, 85000.25, yes\n"
+        "David Wilson, 29, invalid_salary, true\n"
+        "Eve Brown, 31, 72000.00, 1\n";
+    
+    auto persons = DataParser::parsePersonRecords(personData);
+    
+    std::cout << "Parsed person records:\n";
+    for (const auto& person : persons) 
+    {
+        person.display();
+    }
+    
+    // Report generation
+    std::cout << "\n--- Sales Report Generation ---\n";
+    std::vector<std::pair<std::string, double>> salesData = {
+        {"Widget A", 15420.50},
+        {"Widget B", 23150.75},
+        {"Widget C", 8900.25},
+        {"Widget D", 31250.00}
+    };
+    
+    std::string report = ReportGenerator::generateSalesReport(salesData);
+    std::cout << report << "\n";
+    
+    // HTML generation
+    std::cout << "\n--- HTML Report Generation ---\n";
+    std::string htmlReport = ReportGenerator::generateHTMLTable(persons);
+    std::cout << "Generated HTML (first 200 chars):\n";
+    std::cout << htmlReport.substr(0, 200) << "...\n";
+}
+```
+
+---
+
+## 28.4 - Custom Stream Manipulators
+
+### Creating Your Own Stream Manipulators
+
+```cpp
+#include <iostream>
+#include <iomanip>
+#include <string>
+#include <sstream>
+
+// ✅ Simple manipulator without parameters
+std::ostream& bold(std::ostream& os) 
+{
+    return os << "\033[1m";  // ANSI bold escape sequence
+}
+
+std::ostream& reset(std::ostream& os) 
+{
+    return os << "\033[0m";  // ANSI reset escape sequence
+}
+
+std::ostream& red(std::ostream& os) 
+{
+    return os << "\033[31m";  // ANSI red color
+}
+
+std::ostream& green(std::ostream& os) 
+{
+    return os << "\033[32m";  // ANSI green color
+}
+
+std::ostream& blue(std::ostream& os) 
+{
+    return os << "\033[34m";  // ANSI blue color
+}
+
+// ✅ Manipulator with parameters using function objects
+class Indent 
+{
+private:
+    int spaces;
+    
+public:
+    Indent(int n) : spaces(n) {}
+    
+    friend std::ostream& operator<<(std::ostream& os, const Indent& indent) 
+    {
+        for (int i = 0; i < indent.spaces; ++i) 
+        {
+            os << ' ';
+        }
+        return os;
+    }
+};
+
+// Factory function for easier use
+Indent indent(int spaces) 
+{
+    return Indent(spaces);
+}
+
+// ✅ Advanced manipulator with internal state
+class TableFormatter 
+{
+private:
+    std::vector<int> columnWidths;
+    char borderChar;
+    
+public:
+    TableFormatter(const std::vector<int>& widths, char border = '|') 
+        : columnWidths(widths), borderChar(border) {}
+    
+    std::ostream& printHeader(std::ostream& os, const std::vector<std::string>& headers) const 
+    {
+        printSeparator(os);
+        
+        os << borderChar;
+        for (size_t i = 0; i < headers.size() && i < columnWidths.size(); ++i) 
+        {
+            os << " " << std::left << std::setw(columnWidths[i] - 1) << headers[i] << borderChar;
+        }
+        os << "\n";
+        
+        printSeparator(os);
+        return os;
+    }
+    
+    std::ostream& printRow(std::ostream& os, const std::vector<std::string>& row) const 
+    {
+        os << borderChar;
+        for (size_t i = 0; i < row.size() && i < columnWidths.size(); ++i) 
+        {
+            os << " " << std::left << std::setw(columnWidths[i] - 1) << row[i] << borderChar;
+        }
+        os << "\n";
+        return os;
+    }
+    
+    std::ostream& printSeparator(std::ostream& os) const 
+    {
+        os << "+";
+        for (int width : columnWidths) 
+        {
+            os << std::string(width, '-') << "+";
+        }
+        os << "\n";
+        return os;
+    }
+    
+    void finishTable(std::ostream& os) const 
+    {
+        printSeparator(os);
+    }
+};
+
+// ✅ Progress bar manipulator
+class ProgressBar 
+{
+private:
+    double percentage;
+    int width;
+    char fillChar;
+    char emptyChar;
+    
+public:
+    ProgressBar(double percent, int w = 30, char fill = '=', char empty = '-')
+        : percentage(percent), width(w), fillChar(fill), emptyChar(empty) 
+    {
+        if (percentage < 0.0) percentage = 0.0;
+        if (percentage > 100.0) percentage = 100.0;
+    }
+    
+    friend std::ostream& operator<<(std::ostream& os, const ProgressBar& pb) 
+    {
+        int filledWidth = static_cast<int>((pb.percentage / 100.0) * pb.width);
+        int emptyWidth = pb.width - filledWidth;
+        
+        os << "[";
+        os << std::string(filledWidth, pb.fillChar);
+        os << std::string(emptyWidth, pb.emptyChar);
+        os << "] " << std::fixed << std::setprecision(1) << pb.percentage << "%";
+        
+        return os;
+    }
+};
+
+// Factory function
+ProgressBar progress(double percent, int width = 30) 
+{
+    return ProgressBar(percent, width);
+}
+
+// ✅ Binary formatter
+class BinaryFormatter 
+{
+private:
+    unsigned int value;
+    int width;
+    
+public:
+    BinaryFormatter(unsigned int val, int w = 8) : value(val), width(w) {}
+    
+    friend std::ostream& operator<<(std::ostream& os, const BinaryFormatter& bf) 
+    {
+        std::string binary;
+        unsigned int temp = bf.value;
+        
+        if (temp == 0) 
+        {
+            binary = "0";
+        } 
+        else 
+        {
+            while (temp > 0) 
+            {
+                binary = (temp % 2 == 0 ? "0" : "1") + binary;
+                temp /= 2;
+            }
+        }
+        
+        // Pad with leading zeros if necessary
+        while (static_cast<int>(binary.length()) < bf.width) 
+        {
+            binary = "0" + binary;
+        }
+        
+        return os << binary;
+    }
+};
+
+BinaryFormatter binary(unsigned int value, int width = 8) 
+{
+    return BinaryFormatter(value, width);
+}
+
+void demonstrateCustomManipulators() 
+{
+    std::cout << "=== Custom Stream Manipulators ===\n";
+    
+    // Color manipulators
+    std::cout << "\n--- Color Manipulators ---\n";
+    std::cout << red << "This is red text" << reset << "\n";
+    std::cout << green << bold << "This is bold green text" << reset << "\n";
+    std::cout << blue << "This is blue text" << reset << "\n";
+    
+    // Indentation manipulator
+    std::cout << "\n--- Indentation ---\n";
+    std::cout << "No indentation\n";
+    std::cout << indent(4) << "4 spaces indentation\n";
+    std::cout << indent(8) << "8 spaces indentation\n";
+    std::cout << indent(12) << "12 spaces indentation\n";
+    
+    // Progress bar manipulator
+    std::cout << "\n--- Progress Bars ---\n";
+    for (int i = 0; i <= 100; i += 20) 
+    {
+        std::cout << "Download: " << progress(i) << "\n";
+    }
+    
+    std::cout << "Upload:   " << progress(73.5, 20) << "\n";
+    
+    // Binary formatter
+    std::cout << "\n--- Binary Formatter ---\n";
+    for (int i = 0; i < 16; ++i) 
+    {
+        std::cout << "Dec: " << std::setw(2) << i 
+                  << " Bin: " << binary(i, 4) 
+                  << " Hex: " << std::hex << i << std::dec << "\n";
+    }
+    
+    // Table formatter
+    std::cout << "\n--- Table Formatter ---\n";
+    TableFormatter table({12, 8, 15, 10});
+    
+    table.printHeader(std::cout, {"Name", "Age", "Department", "Salary"});
+    table.printRow(std::cout, {"Alice", "28", "Engineering", "$65000"});
+    table.printRow(std::cout, {"Bob", "35", "Marketing", "$58000"});
+    table.printRow(std::cout, {"Carol", "42", "Sales", "$72000"});
+    table.finishTable(std::cout);
+}
+```
+
+---
+
+## 28.5 - Stream Performance and Best Practices
+
+### Optimizing Stream Operations
+
+```cpp
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <chrono>
+#include <vector>
+#include <string>
+#include <iomanip>
+
+class StreamPerformance 
+{
+public:
+    // ✅ Benchmark different output methods
+    static void benchmarkOutputMethods() 
+    {
+        std::cout << "\n=== Output Performance Benchmark ===\n";
+        
+        const int iterations = 100000;
+        
+        // Method 1: std::cout with sync_with_stdio
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        for (int i = 0; i < iterations; ++i) 
+        {
+            std::cout << "Line " << i << ": Hello, World!\n";
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration1 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        
+        // Method 2: std::cout without sync_with_stdio
+        std::ios_base::sync_with_stdio(false);  // Disable sync with C stdio
+        std::cin.tie(nullptr);  // Untie cin from cout
+        
+        start = std::chrono::high_resolution_clock::now();
+        
+        for (int i = 0; i < iterations; ++i) 
+        {
+            std::cout << "Line " << i << ": Hello, World!\n";
+        }
+        
+        end = std::chrono::high_resolution_clock::now();
+        auto duration2 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        
+        // Method 3: Buffered output with ostringstream
+        start = std::chrono::high_resolution_clock::now();
+        
+        std::ostringstream buffer;
+        for (int i = 0; i < iterations; ++i) 
+        {
+            buffer << "Line " << i << ": Hello, World!\n";
+        }
+        std::cout << buffer.str();
+        
+        end = std::chrono::high_resolution_clock::now();
+        auto duration3 = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        
+        std::cout << "\nPerformance Results:\n";
+        std::cout << "Synced stdout:    " << duration1.count() << " ms\n";
+        std::cout << "Unsynced stdout:  " << duration2.count() << " ms\n";
+        std::cout << "Buffered output:  " << duration3.count() << " ms\n";
+        
+        // Re-enable sync for safety
+        std::ios_base::sync_with_stdio(true);
+    }
+    
+    // ✅ Benchmark file I/O methods
+    static void benchmarkFileIO() 
+    {
+        std::cout << "\n=== File I/O Performance Benchmark ===\n";
+        
+        const int dataSize = 10000;
+        std::vector<int> testData;
+        
+        // Generate test data
+        for (int i = 0; i < dataSize; ++i) 
+        {
+            testData.push_back(i * i);
+        }
+        
+        // Method 1: Text file I/O
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        {
+            std::ofstream textFile("test_text.txt");
+            for (int value : testData) 
+            {
+                textFile << value << "\n";
+            }
+        }
+        
+        std::vector<int> readData1;
+        {
+            std::ifstream textFile("test_text.txt");
+            int value;
+            while (textFile >> value) 
+            {
+                readData1.push_back(value);
+            }
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        auto textDuration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        // Method 2: Binary file I/O
+        start = std::chrono::high_resolution_clock::now();
+        
+        {
+            std::ofstream binaryFile("test_binary.bin", std::ios::binary);
+            size_t size = testData.size();
+            binaryFile.write(reinterpret_cast<const char*>(&size), sizeof(size));
+            binaryFile.write(reinterpret_cast<const char*>(testData.data()), 
+                           testData.size() * sizeof(int));
+        }
+        
+        std::vector<int> readData2;
+        {
+            std::ifstream binaryFile("test_binary.bin", std::ios::binary);
+            size_t size;
+            binaryFile.read(reinterpret_cast<char*>(&size), sizeof(size));
+            readData2.resize(size);
+            binaryFile.read(reinterpret_cast<char*>(readData2.data()), 
+                          size * sizeof(int));
+        }
+        
+        end = std::chrono::high_resolution_clock::now();
+        auto binaryDuration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        std::cout << "File I/O Results (" << dataSize << " integers):\n";
+        std::cout << "Text file:   " << textDuration.count() << " µs\n";
+        std::cout << "Binary file: " << binaryDuration.count() << " µs\n";
+        std::cout << "Binary is " << std::fixed << std::setprecision(1) 
+                  << (static_cast<double>(textDuration.count()) / binaryDuration.count()) 
+                  << "x faster\n";
+        
+        // Verify data integrity
+        bool textCorrect = (testData == readData1);
+        bool binaryCorrect = (testData == readData2);
+        
+        std::cout << "Text data integrity: " << (textCorrect ? "PASS" : "FAIL") << "\n";
+        std::cout << "Binary data integrity: " << (binaryCorrect ? "PASS" : "FAIL") << "\n";
+    }
+    
+    // ✅ String manipulation performance
+    static void benchmarkStringOperations() 
+    {
+        std::cout << "\n=== String Operations Benchmark ===\n";
+        
+        const int iterations = 10000;
+        
+        // Method 1: String concatenation with +=
+        auto start = std::chrono::high_resolution_clock::now();
+        
+        std::string result1;
+        for (int i = 0; i < iterations; ++i) 
+        {
+            result1 += "Item " + std::to_string(i) + "\n";
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        auto concat_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        // Method 2: ostringstream
+        start = std::chrono::high_resolution_clock::now();
+        
+        std::ostringstream oss;
+        for (int i = 0; i < iterations; ++i) 
+        {
+            oss << "Item " << i << "\n";
+        }
+        std::string result2 = oss.str();
+        
+        end = std::chrono::high_resolution_clock::now();
+        auto stream_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        // Method 3: Pre-allocated string with reserve
+        start = std::chrono::high_resolution_clock::now();
+        
+        std::string result3;
+        result3.reserve(iterations * 20);  // Estimate final size
+        for (int i = 0; i < iterations; ++i) 
+        {
+            result3 += "Item " + std::to_string(i) + "\n";
+        }
+        
+        end = std::chrono::high_resolution_clock::now();
+        auto reserved_duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        
+        std::cout << "String Building Results (" << iterations << " items):\n";
+        std::cout << "String concatenation: " << concat_duration.count() << " µs\n";
+        std::cout << "ostringstream:        " << stream_duration.count() << " µs\n";
+        std::cout << "Reserved string:      " << reserved_duration.count() << " µs\n";
+        
+        // Verify all methods produce same result
+        bool results_match = (result1 == result2) && (result2 == result3);
+        std::cout << "Results match: " << (results_match ? "YES" : "NO") << "\n";
+    }
+};
+
+// ✅ Best practices class
+class StreamBestPractices 
+{
+public:
+    static void demonstrateBestPractices() 
+    {
+        std::cout << "\n=== Stream Best Practices ===\n";
+        
+        // ✅ Always check stream state
+        std::cout << "\n--- Error Handling ---\n";
+        {
+            std::ifstream file("nonexistent.txt");
+            if (!file.is_open()) 
+            {
+                std::cout << "✓ Properly checked if file opened\n";
+            }
+            
+            if (file.fail()) 
+            {
+                std::cout << "✓ Detected file operation failure\n";
+            }
+        }
+        
+        // ✅ Use RAII for automatic cleanup
+        std::cout << "\n--- RAII Usage ---\n";
+        {
+            std::ofstream file("temp.txt");
+            if (file.is_open()) 
+            {
+                file << "Temporary data\n";
+                std::cout << "✓ File automatically closed when going out of scope\n";
+            }
+            // File automatically closed here
+        }
+        
+        // ✅ Efficient buffering
+        std::cout << "\n--- Efficient Buffering ---\n";
+        {
+            std::ostringstream buffer;
+            
+            // Build output in memory first
+            for (int i = 0; i < 5; ++i) 
+            {
+                buffer << "Line " << i << ": Some data\n";
+            }
+            
+            // Single output operation
+            std::cout << buffer.str();
+            std::cout << "✓ Used buffering for efficient output\n";
+        }
+        
+        // ✅ Proper stream synchronization control
+        std::cout << "\n--- Stream Synchronization ---\n";
+        {
+            // For performance-critical code
+            std::ios_base::sync_with_stdio(false);
+            std::cin.tie(nullptr);
+            
+            std::cout << "✓ Disabled sync for better performance (when not mixing C and C++ I/O)\n";
+            
+            // Re-enable for safety
+            std::ios_base::sync_with_stdio(true);
+            std::cout << "✓ Re-enabled sync for safety\n";
+        }
+        
+        // ✅ Exception safety with streams
+        std::cout << "\n--- Exception Safety ---\n";
+        try 
+        {
+            std::ofstream file("readonly_dir/file.txt");  // This might fail
+            
+            if (!file.is_open()) 
+            {
+                throw std::runtime_error("Cannot create file");
+            }
+            
+            file << "Some data\n";
+            
+            if (file.fail()) 
+            {
+                throw std::runtime_error("Write operation failed");
+            }
+            
+            std::cout << "✓ File operations completed successfully\n";
+        }
+        catch (const std::exception& e) 
+        {
+            std::cout << "✓ Properly caught and handled file error: " << e.what() << "\n";
+        }
+        
+        // ✅ Binary vs text mode considerations
+        std::cout << "\n--- Binary vs Text Mode ---\n";
+        {
+            // Text mode - platform-specific line endings
+            std::ofstream textFile("text_data.txt");
+            textFile << "Line 1\nLine 2\nLine 3\n";
+            
+            // Binary mode - exact byte control
+            std::ofstream binaryFile("binary_data.bin", std::ios::binary);
+            const char data[] = "Line 1\nLine 2\nLine 3\n";
+            binaryFile.write(data, sizeof(data) - 1);
+            
+            std::cout << "✓ Used appropriate modes for text and binary data\n";
+        }
+    }
+};
+
+int main() 
+{
+    demonstrateStringStreams();
+    demonstrateCustomManipulators();
+    
+    // Performance benchmarks (may take some time)
+    StreamPerformance::benchmarkOutputMethods();
+    StreamPerformance::benchmarkFileIO();
+    StreamPerformance::benchmarkStringOperations();
+    
+    StreamBestPractices::demonstrateBestPractices();
+    
+    return 0;
+}
+```
+
+---
+
+## Best Practices Summary
+
+### Exception Handling Guidelines
+
+```cpp
+// ✅ DO: Use specific exception types
+throw std::invalid_argument("Parameter cannot be negative");
+
+// ❌ DON'T: Throw primitive types
+throw "Error message";  // Hard to catch specifically
+
+// ✅ DO: Catch by const reference
+catch (const std::exception& e) { /* ... */ }
+
+// ❌ DON'T: Catch by value (expensive copy)
+catch (std::exception e) { /* ... */ }
+
+// ✅ DO: Order catch blocks from specific to general
+try { /* ... */ }
+catch (const std::invalid_argument& e) { /* specific */ }
+catch (const std::logic_error& e) { /* more general */ }
+catch (const std::exception& e) { /* most general */ }
+
+// ✅ DO: Use RAII for resource management
+{
+    std::unique_ptr<Resource> resource = std::make_unique<Resource>();
+    // Automatic cleanup even if exception occurs
+}
+
+// ✅ DO: Prefer noexcept for functions that won't throw
+void utilityFunction() noexcept { /* ... */ }
+```
+
+### Stream I/O Best Practices
+
+```cpp
+// ✅ DO: Always check stream operations
+std::ifstream file("data.txt");
+if (!file.is_open()) {
+    throw std::runtime_error("Cannot open file");
+}
+
+// ✅ DO: Use binary mode for binary data
+std::ofstream file("data.bin", std::ios::binary);
+
+// ✅ DO: Buffer output for performance
+std::ostringstream buffer;
+for (const auto& item : items) {
+    buffer << item << "\n";
+}
+std::cout << buffer.str();
+
+// ✅ DO: Use appropriate precision for floating-point
+std::cout << std::fixed << std::setprecision(2) << value;
+
+// ✅ DO: Clear stream errors when needed
+if (stream.fail()) {
+    stream.clear();
+    stream.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+}
+```
+
+---
+
+## Conclusion
+
+Exception handling and I/O streams are fundamental to robust C++ programming:
+
+**Exception Handling enables:**
+- Clean separation of normal code from error handling
+- Automatic resource cleanup through RAII
+- Hierarchical error handling with specific catch blocks
+- Strong exception safety guarantees
+
+**I/O Streams provide:**
+- Unified interface for different data sources/destinations
+- Type-safe input/output operations
+- Flexible formatting and manipulation
+- Efficient buffering and performance optimization
+
+**Key Takeaways:**
+1. **Always use RAII** for resource management
+2. **Check stream states** after operations
+3. **Use specific exception types** for better error handling
+4. **Buffer output operations** for performance
+5. **Choose binary vs text mode** appropriately
+6. **Handle exceptions at appropriate levels** in your program
+
+These concepts form the foundation for writing reliable, maintainable C++ applications that gracefully handle errors and efficiently process data.
+
+**Next: Advanced Topics - Templates, STL Deep Dive, and Modern C++ Features**
+     (const DivideByZeroException& e) 
+    {
+        std::cout << "Division error: " << e.what() << "\n";
+        return 1;
+    }
+    catch (const NegativeInputException& e) 
+    {
+        std::cout << "Input error: " << e.what() << "\n";
+        return 1;
+    }
+    catch (const MathException& e) 
+    {
+        std::cout << "Math error: " << e.what() << "\n";
+        return 1;
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Unexpected error: " << e.what() << "\n";
+        return 1;
+    }
+    
+    return 0;
+}
+```
+
+---
+
+## 27.2 - Basic Exception Syntax
+
+### Try, Throw, and Catch
+
+```cpp
+#include <iostream>
+#include <string>
+#include <stdexcept>
+
+// Function that can throw different types of exceptions
+void demonstrateBasicExceptions(int choice) 
+{
+    switch (choice) 
+    {
+        case 1:
+            throw 42;  // Throw an integer
+            
+        case 2:
+            throw std::string("String exception");  // Throw a string
+            
+        case 3:
+            throw std::runtime_error("Runtime error occurred");  // Standard exception
+            
+        case 4:
+            throw;  // Re-throw current exception (only valid in catch block)
+            
+        default:
+            std::cout << "No exception thrown\n";
+    }
+}
+
+int main() 
+{
+    for (int i = 1; i <= 4; ++i) 
+    {
+        std::cout << "\n=== Test " << i << " ===\n";
+        
+        try 
+        {
+            demonstrateBasicExceptions(i);
+            std::cout << "No exception was thrown\n";
+        }
+        catch (int value) 
+        {
+            std::cout << "Caught integer exception: " << value << "\n";
+        }
+        catch (const std::string& message) 
+        {
+            std::cout << "Caught string exception: " << message << "\n";
+        }
+        catch (const std::runtime_error& e) 
+        {
+            std::cout << "Caught runtime_error: " << e.what() << "\n";
+        }
+        catch (...) 
+        {
+            std::cout << "Caught unknown exception type\n";
+        }
+    }
+    
+    return 0;
+}
+```
+
+### Exception Specification and noexcept
+
+```cpp
+#include <iostream>
+#include <stdexcept>
+
+// Functions with different exception specifications
+void throwingFunction() 
+{
+    throw std::runtime_error("This function can throw");
+}
+
+void nonThrowingFunction() noexcept 
+{
+    // This function promises not to throw
+    std::cout << "This function won't throw\n";
+}
+
+void conditionalNoexcept(bool shouldThrow) noexcept(!shouldThrow) 
+{
+    if (shouldThrow) 
+    {
+        // This would terminate the program if shouldThrow is true
+        // because noexcept(false) when shouldThrow is true
+    }
+    
+    std::cout << "Conditional noexcept function\n";
+}
+
+// Template with conditional noexcept
+template<typename T>
+void templateFunction(T&& value) noexcept(noexcept(std::forward<T>(value))) 
+{
+    auto result = std::forward<T>(value);
+    std::cout << "Template function completed\n";
+}
+
+int main() 
+{
+    std::cout << "=== Exception Specifications ===\n";
+    
+    // Check if functions are noexcept at compile time
+    std::cout << "throwingFunction is noexcept: " 
+              << std::boolalpha << noexcept(throwingFunction()) << "\n";
+    
+    std::cout << "nonThrowingFunction is noexcept: " 
+              << std::boolalpha << noexcept(nonThrowingFunction()) << "\n";
+    
+    std::cout << "conditionalNoexcept(false) is noexcept: " 
+              << std::boolalpha << noexcept(conditionalNoexcept(false)) << "\n";
+    
+    std::cout << "conditionalNoexcept(true) is noexcept: " 
+              << std::boolalpha << noexcept(conditionalNoexcept(true)) << "\n";
+    
+    nonThrowingFunction();
+    conditionalNoexcept(false);
+    
+    try 
+    {
+        throwingFunction();
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Caught: " << e.what() << "\n";
+    }
+    
+    return 0;
+}
+```
+
+---
+
+## 27.3 - Standard Exception Classes
+
+### The Standard Exception Hierarchy
+
+```cpp
+#include <iostream>
+#include <stdexcept>
+#include <typeinfo>
+#include <memory>
+#include <vector>
+#include <new>
+
+void demonstrateStandardExceptions() 
+{
+    std::cout << "=== Standard Exception Classes ===\n";
+    
+    // Logic errors - programming mistakes
+    try 
+    {
+        std::vector<int> vec(5);
+        vec.at(10);  // Out of bounds access
+    }
+    catch (const std::out_of_range& e) 
+    {
+        std::cout << "std::out_of_range: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        std::string str = "hello";
+        str.substr(10, 5);  // Invalid substring
+    }
+    catch (const std::out_of_range& e) 
+    {
+        std::cout << "std::out_of_range (substring): " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::invalid_argument("This argument is not valid");
+    }
+    catch (const std::invalid_argument& e) 
+    {
+        std::cout << "std::invalid_argument: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::domain_error("Input outside valid domain");
+    }
+    catch (const std::domain_error& e) 
+    {
+        std::cout << "std::domain_error: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::length_error("Container size exceeded");
+    }
+    catch (const std::length_error& e) 
+    {
+        std::cout << "std::length_error: " << e.what() << "\n";
+    }
+    
+    // Runtime errors - environmental issues
+    try 
+    {
+        throw std::runtime_error("Something went wrong at runtime");
+    }
+    catch (const std::runtime_error& e) 
+    {
+        std::cout << "std::runtime_error: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::range_error("Value out of range");
+    }
+    catch (const std::range_error& e) 
+    {
+        std::cout << "std::range_error: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::overflow_error("Arithmetic overflow");
+    }
+    catch (const std::overflow_error& e) 
+    {
+        std::cout << "std::overflow_error: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::underflow_error("Arithmetic underflow");
+    }
+    catch (const std::underflow_error& e) 
+    {
+        std::cout << "std::underflow_error: " << e.what() << "\n";
+    }
+    
+    // System exceptions
+    try 
+    {
+        throw std::bad_alloc();
+    }
+    catch (const std::bad_alloc& e) 
+    {
+        std::cout << "std::bad_alloc: " << e.what() << "\n";
+    }
+    
+    try 
+    {
+        throw std::bad_cast();
+    }
+    catch (const std::bad_cast& e) 
+    {
+        std::cout << "std::bad_cast: " << e.what() << "\n";
+    }
+}
+```
+
+### Custom Exception Classes
+
+```cpp
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <sstream>
+
+// Base exception class for a banking application
+class BankException : public std::runtime_error 
+{
+protected:
+    std::string accountNumber;
+    double amount;
+    
+public:
+    BankException(const std::string& message, 
+                  const std::string& account, 
+                  double amt = 0.0)
+        : std::runtime_error(message), accountNumber(account), amount(amt) {}
+    
+    const std::string& getAccountNumber() const { return accountNumber; }
+    double getAmount() const { return amount; }
+    
+    virtual std::string getDetailedMessage() const 
+    {
+        std::ostringstream oss;
+        oss << what() << " (Account: " << accountNumber;
+        if (amount != 0.0) 
+        {
+            oss << ", Amount: $" << amount;
+        }
+        oss << ")";
+        return oss.str();
+    }
+};
+
+class InsufficientFundsException : public BankException 
+{
+private:
+    double currentBalance;
+    
+public:
+    InsufficientFundsException(const std::string& account, 
+                              double requestedAmount, 
+                              double balance)
+        : BankException("Insufficient funds", account, requestedAmount)
+        , currentBalance(balance) {}
+    
+    double getCurrentBalance() const { return currentBalance; }
+    
+    std::string getDetailedMessage() const override 
+    {
+        std::ostringstream oss;
+        oss << "Insufficient funds in account " << accountNumber 
+            << ": Requested $" << amount 
+            << ", Available $" << currentBalance;
+        return oss.str();
+    }
+};
+
+class InvalidAccountException : public BankException 
+{
+public:
+    InvalidAccountException(const std::string& account)
+        : BankException("Invalid account number", account) {}
+};
+
+class NegativeAmountException : public BankException 
+{
+public:
+    NegativeAmountException(const std::string& account, double amt)
+        : BankException("Negative amount not allowed", account, amt) {}
+};
+
+// Simple bank account class
+class BankAccount 
+{
+private:
+    std::string accountNumber;
+    double balance;
+    
+public:
+    BankAccount(const std::string& account, double initialBalance)
+        : accountNumber(account), balance(initialBalance) 
+    {
+        if (initialBalance < 0) 
+        {
+            throw NegativeAmountException(account, initialBalance);
+        }
+    }
+    
+    void withdraw(double amount) 
+    {
+        if (amount < 0) 
+        {
+            throw NegativeAmountException(accountNumber, amount);
+        }
+        
+        if (amount > balance) 
+        {
+            throw InsufficientFundsException(accountNumber, amount, balance);
+        }
+        
+        balance -= amount;
+        std::cout << "Withdrew $" << amount << " from " << accountNumber 
+                  << ". New balance: $" << balance << "\n";
+    }
+    
+    void deposit(double amount) 
+    {
+        if (amount < 0) 
+        {
+            throw NegativeAmountException(accountNumber, amount);
+        }
+        
+        balance += amount;
+        std::cout << "Deposited $" << amount << " to " << accountNumber 
+                  << ". New balance: $" << balance << "\n";
+    }
+    
+    double getBalance() const { return balance; }
+    const std::string& getAccountNumber() const { return accountNumber; }
+};
+
+void demonstrateCustomExceptions() 
+{
+    std::cout << "\n=== Custom Exceptions Demo ===\n";
+    
+    try 
+    {
+        BankAccount account("ACC-12345", 1000.0);
+        
+        account.deposit(500.0);   // Should work
+        account.withdraw(200.0);  // Should work
+        account.withdraw(2000.0); // Should throw InsufficientFundsException
+    }
+    catch (const InsufficientFundsException& e) 
+    {
+        std::cout << "Banking Error: " << e.getDetailedMessage() << "\n";
+    }
+    catch (const BankException& e) 
+    {
+        std::cout << "Banking Error: " << e.getDetailedMessage() << "\n";
+    }
+    
+    try 
+    {
+        BankAccount badAccount("ACC-67890", -100.0);  // Should throw
+    }
+    catch (const NegativeAmountException& e) 
+    {
+        std::cout << "Account Creation Error: " << e.getDetailedMessage() << "\n";
+    }
+}
+
+int main() 
+{
+    demonstrateStandardExceptions();
+    demonstrateCustomExceptions();
+    return 0;
+}
+```
+
+---
+
+## 27.4 - Exception Safety Guarantees
+
+### Understanding Exception Safety Levels
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <string>
+#include <stdexcept>
+
+class Resource 
+{
+private:
+    std::string name;
+    static int instanceCount;
+    
+public:
+    Resource(const std::string& n) : name(n) 
+    {
+        ++instanceCount;
+        std::cout << "Created resource: " << name << " (total: " << instanceCount << ")\n";
+        
+        // Simulate potential failure during construction
+        if (name == "fail") 
+        {
+            throw std::runtime_error("Resource construction failed");
+        }
+    }
+    
+    ~Resource() 
+    {
+        --instanceCount;
+        std::cout << "Destroyed resource: " << name << " (remaining: " << instanceCount << ")\n";
+    }
+    
+    Resource(const Resource& other) : name(other.name + "_copy") 
+    {
+        ++instanceCount;
+        std::cout << "Copied resource: " << name << "\n";
+    }
+    
+    Resource& operator=(const Resource& other) 
+    {
+        if (this != &other) 
+        {
+            name = other.name + "_assigned";
+            std::cout << "Assigned resource: " << name << "\n";
+        }
+        return *this;
+    }
+    
+    const std::string& getName() const { return name; }
+    static int getInstanceCount() { return instanceCount; }
+};
+
+int Resource::instanceCount = 0;
+
+// ❌ No exception safety - can leak resources
+class UnsafeContainer 
+{
+private:
+    Resource* resource1;
+    Resource* resource2;
+    
+public:
+    UnsafeContainer(const std::string& name1, const std::string& name2)
+        : resource1(nullptr), resource2(nullptr) 
+    {
+        resource1 = new Resource(name1);  // If this throws, no leak
+        resource2 = new Resource(name2);  // If this throws, resource1 leaks!
+    }
+    
+    ~UnsafeContainer() 
+    {
+        delete resource1;
+        delete resource2;
+    }
+};
+
+// ✅ Basic exception safety - no leaks, but object may be in invalid state
+class BasicSafeContainer 
+{
+private:
+    std::unique_ptr<Resource> resource1;
+    std::unique_ptr<Resource> resource2;
+    
+public:
+    BasicSafeContainer(const std::string& name1, const std::string& name2) 
+    {
+        resource1 = std::make_unique<Resource>(name1);
+        resource2 = std::make_unique<Resource>(name2);
+        // If second construction fails, first resource is automatically cleaned up
+    }
+    
+    void replaceResources(const std::string& name1, const std::string& name2) 
+    {
+        auto temp1 = std::make_unique<Resource>(name1);  // May throw
+        auto temp2 = std::make_unique<Resource>(name2);  // May throw
+        
+        // Only modify state after all operations that can throw have succeeded
+        resource1 = std::move(temp1);
+        resource2 = std::move(temp2);
+    }
+};
+
+// ✅ Strong exception safety - operation succeeds completely or leaves object unchanged
+class StrongSafeContainer 
+{
+private:
+    std::vector<std::unique_ptr<Resource>> resources;
+    
+public:
+    StrongSafeContainer() = default;
+    
+    void addResource(const std::string& name) 
+    {
+        // Create resource first (may throw)
+        auto newResource = std::make_unique<Resource>(name);
+        
+        // Only modify container after successful construction
+        resources.push_back(std::move(newResource));
+        // Vector::push_back provides strong exception safety guarantee
+    }
+    
+    void replaceAllResources(const std::vector<std::string>& names) 
+    {
+        // Create all new resources first
+        std::vector<std::unique_ptr<Resource>> newResources;
+        newResources.reserve(names.size());
+        
+        for (const auto& name : names) 
+        {
+            newResources.push_back(std::make_unique<Resource>(name));
+        }
+        
+        // Only replace after all constructions succeed
+        resources = std::move(newResources);
+    }
+    
+    size_t size() const { return resources.size(); }
+    
+    const Resource& getResource(size_t index) const 
+    {
+        if (index >= resources.size()) 
+        {
+            throw std::out_of_range("Resource index out of range");
+        }
+        return *resources[index];
+    }
+};
+
+// ✅ No-throw guarantee - operation cannot fail
+class NoThrowContainer 
+{
+private:
+    std::vector<std::string> resourceNames;
+    
+public:
+    // No-throw operations
+    size_t size() const noexcept { return resourceNames.size(); }
+    bool empty() const noexcept { return resourceNames.empty(); }
+    
+    void clear() noexcept 
+    {
+        resourceNames.clear();  // vector::clear() is noexcept
+    }
+    
+    void swap(NoThrowContainer& other) noexcept 
+    {
+        resourceNames.swap(other.resourceNames);  // vector::swap() is noexcept
+    }
+    
+    // Operations that can throw are clearly marked
+    void addResourceName(const std::string& name) 
+    {
+        resourceNames.push_back(name);  // May throw std::bad_alloc
+    }
+};
+
+void demonstrateExceptionSafety() 
+{
+    std::cout << "\n=== Exception Safety Demo ===\n";
+    
+    // Test basic safety
+    std::cout << "\n--- Basic Safety Test ---\n";
+    try 
+    {
+        BasicSafeContainer container("resource1", "resource2");
+        std::cout << "Container created successfully\n";
+        
+        // This will fail on second resource, but won't leak
+        container.replaceResources("resource3", "fail");
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Caught exception: " << e.what() << "\n";
+    }
+    
+    // Test strong safety
+    std::cout << "\n--- Strong Safety Test ---\n";
+    try 
+    {
+        StrongSafeContainer container;
+        container.addResource("resource1");
+        container.addResource("resource2");
+        std::cout << "Container has " << container.size() << " resources\n";
+        
+        // This will fail, but container remains in original state
+        std::vector<std::string> badNames = {"resource3", "fail", "resource4"};
+        container.replaceAllResources(badNames);
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Caught exception: " << e.what() << "\n";
+        // Container still has original 2 resources
+    }
+    
+    std::cout << "Final resource count: " << Resource::getInstanceCount() << "\n";
+}
+```
+
+---
+
+## 27.5 - RAII (Resource Acquisition Is Initialization)
+
+### The RAII Pattern
+
+```cpp
+#include <iostream>
+#include <fstream>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <chrono>
+
+// ❌ Manual resource management - error-prone
+void badFileHandling() 
+{
+    std::cout << "\n--- Bad File Handling ---\n";
+    
+    FILE* file = fopen("data.txt", "w");
+    if (!file) 
+    {
+        std::cout << "Failed to open file\n";
+        return;
+    }
+    
+    try 
+    {
+        // Some operation that might throw
+        if (true)  // Simulate error condition
+        {
+            throw std::runtime_error("Something went wrong");
+        }
+        
+        fprintf(file, "Hello, World!\n");
+        fclose(file);  // This never gets called!
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Exception: " << e.what() << "\n";
+        // File handle leaked!
+    }
+}
+
+// ✅ RAII with automatic cleanup
+class FileRAII 
+{
+private:
+    FILE* file;
+    std::string filename;
+    
+public:
+    FileRAII(const std::string& filename, const std::string& mode)
+        : file(nullptr), filename(filename) 
+    {
+        file = fopen(filename.c_str(), mode.c_str());
+        if (!file) 
+        {
+            throw std::runtime_error("Failed to open file: " + filename);
+        }
+        std::cout << "Opened file: " << filename << "\n";
+    }
+    
+    ~FileRAII() 
+    {
+        if (file) 
+        {
+            fclose(file);
+            std::cout << "Closed file: " << filename << "\n";
+        }
+    }
+    
+    // Delete copy constructor and assignment to prevent double-close
+    FileRAII(const FileRAII&) = delete;
+    FileRAII& operator=(const FileRAII&) = delete;
+    
+    // Move semantics for transferring ownership
+    FileRAII(FileRAII&& other) noexcept 
+        : file(other.file), filename(std::move(other.filename)) 
+    {
+        other.file = nullptr;
+    }
+    
+    FileRAII& operator=(FileRAII&& other) noexcept 
+    {
+        if (this != &other) 
+        {
+            if (file) 
+            {
+                fclose(file);
+            }
+            
+            file = other.file;
+            filename = std::move(other.filename);
+            other.file = nullptr;
+        }
+        return *this;
+    }
+    
+    void write(const std::string& data) 
+    {
+        if (!file) 
+        {
+            throw std::runtime_error("File not open");
+        }
+        
+        if (fprintf(file, "%s", data.c_str()) < 0) 
+        {
+            throw std::runtime_error("Write failed");
+        }
+    }
+    
+    operator FILE*() const { return file; }  // Allow use as FILE*
+};
+
+void goodFileHandling() 
+{
+    std::cout << "\n--- Good File Handling (RAII) ---\n";
+    
+    try 
+    {
+        FileRAII file("data.txt", "w");  // File automatically closed on scope exit
+        
+        file.write("Hello, RAII World!\n");
+        
+        // Simulate exception
+        throw std::runtime_error("Something went wrong");
+        
+        file.write("This won't be reached\n");
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Exception: " << e.what() << "\n";
+        // File automatically closed by destructor
+    }
+}
+
+// ✅ Modern C++ RAII with smart pointers
+class DatabaseConnection 
+{
+private:
+    std::string connectionString;
+    bool connected;
+    
+public:
+    DatabaseConnection(const std::string& connStr) 
+        : connectionString(connStr), connected(false) 
+    {
+        // Simulate database connection
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        connected = true;
+        std::cout << "Connected to database: " << connectionString << "\n";
+    }
+    
+    ~DatabaseConnection() 
+    {
+        if (connected) 
+        {
+            std::cout << "Disconnecting from database: " << connectionString << "\n";
+        }
+    }
+    
+    void executeQuery(const std::string& query) 
+    {
+        if (!connected) 
+        {
+            throw std::runtime_error("Not connected to database");
+        }
+        
+        std::cout << "Executing query: " << query << "\n";
+        
+        // Simulate query failure
+        if (query == "bad query") 
+        {
+            throw std::runtime_error("Query execution failed");
+        }
+    }
+    
+    bool isConnected() const { return connected; }
+};
+
+void demonstrateSmartPointerRAII() 
+{
+    std::cout << "\n--- Smart Pointer RAII ---\n";
+    
+    try 
+    {
+        // Automatic cleanup with unique_ptr
+        auto db = std::make_unique<DatabaseConnection>("localhost:5432/mydb");
+        
+        db->executeQuery("SELECT * FROM users");
+        db->executeQuery("bad query");  // This will throw
+        
+        db->executeQuery("SELECT * FROM products");  // Won't execute
+    }
+    catch (const std::exception& e) 
+    {
+        std::cout << "Database error: " << e.what() << "\n";
+        // DatabaseConnection automatically destroyed
+    }
+}
+
+// ✅ Lock Guard Pattern
+class ThreadSafeCounter 
+{
+private:
+    mutable std::mutex mtx;
+    int count = 0;
+    
+public:
+    void increment() 
+    {
+        std::lock_guard<std::mutex> lock(mtx);  // RAII lock
+        ++count;
+        // Lock automatically released when lock goes out of scope
+    }
+    
+    void decrement() 
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        --count;
+    }
+    
+    int getValue() const 
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        return count;
+    }
+    
+    void riskyOperation() 
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        // Even if exception is thrown, lock is released
+        if (count > 100) 
+        {
+            throw std::runtime_error("Count too high");
+        }
+        
+        count += 10;
+    }
+};
+
+void demonstrateRAII() 
+{
+    std::cout << "=== RAII Demonstration ===\n";
+    
+    badFileHandling();
+    goodFileHandling();
+    demonstrateSmartPointerRAII();
+    
+    // Thread-safe counter example
+    std::cout << "\n--- Thread-Safe Counter ---\n";
+    ThreadSafeCounter counter;
+    
+    try 
+    {
+        for (int i = 0; i < 105; ++i) 
+        {
+            counter.increment();
+        }
+        
+        counter.riskyOperation();  // Will throw, but mutex released properly
+    }
+    catch
