@@ -3912,933 +3912,5926 @@ These concepts enable you to:
 
 **Next: Chapter 11-12 - Arrays, Vectors, and Memory Management**
 
-# Chapters 24-28: Advanced C++ - Modern Language Features and Best Practices
+# Chapter 11: Function Overloading and Templates
 
-## Building on Fundamentals: Advanced C++ Programming
+## Building from Constexpr: The Need for Generic Programming
 
-Having mastered classes, inheritance, and basic templates, we now explore the sophisticated features that make modern C++ a powerful and expressive language. These chapters cover advanced topics that professional C++ developers use daily to write efficient, maintainable, and robust code.
+In Chapter F, we learned about constexpr functions that can execute at compile-time. But what happens when we need the same functionality for different types? This is where function templates become essential, providing the missing piece for truly generic programming.
 
 ---
 
-## 24.1 - Smart Pointers: Automatic Memory Management
+## 11.1 - Introduction to Function Overloading
 
-### The Problem with Raw Pointers
+### The Basic Problem
 
-Raw pointers create numerous pitfalls:
+Consider this simple function:
 
 ```cpp
-// Problematic raw pointer usage
-void problematicCode() {
-    int* data = new int[1000];  // Manual allocation
-    
-    // ... complex logic that might throw exceptions
-    
-    if (someCondition) {
-        return;  // ❌ Memory leak! Forgot to delete[]
-    }
-    
-    delete[] data;  // ❌ Only reached if no early return
-}
-
-void dangerousSharing() {
-    int* ptr = new int(42);
-    
-    processData(ptr);    // Who owns ptr now?
-    delete ptr;          // ❌ Double delete if processData also deletes?
-    
-    *ptr = 100;          // ❌ Use after free!
+int add(int x, int y) 
+{
+    return x + y;
 }
 ```
 
-### Smart Pointers: The Modern Solution
-
-Smart pointers automatically manage memory and provide clear ownership semantics:
+This works great for integers, but what about floating-point numbers? You'd need to create separate functions:
 
 ```cpp
-#include <memory>
-#include <iostream>
-#include <vector>
+int add(int x, int y) 
+{
+    return x + y;
+}
 
-class Resource {
-public:
-    Resource(int value) : data_(value) {
-        std::cout << "Resource " << data_ << " created\n";
-    }
-    
-    ~Resource() {
-        std::cout << "Resource " << data_ << " destroyed\n";
-    }
-    
-    void use() const {
-        std::cout << "Using resource " << data_ << "\n";
-    }
-    
-private:
-    int data_;
-};
+double add(double x, double y) 
+{
+    return x + y;
+}
 
-void demonstrateSmartPointers() {
-    // unique_ptr: Exclusive ownership
-    std::unique_ptr<Resource> unique = std::make_unique<Resource>(1);
-    unique->use();
-    // Automatically deleted when unique goes out of scope
-    
-    // shared_ptr: Shared ownership
-    std::shared_ptr<Resource> shared1 = std::make_shared<Resource>(2);
-    {
-        std::shared_ptr<Resource> shared2 = shared1;  // Reference count: 2
-        shared2->use();
-    }  // shared2 destroyed, reference count: 1
-    shared1->use();  // Resource still alive
-    // Resource deleted when shared1 goes out of scope
+float add(float x, float y) 
+{
+    return x + y;
 }
 ```
 
-### unique_ptr: Exclusive Ownership
+### Function Overloading Rules
+
+**Function overloading** allows multiple functions with the same name, provided they have different parameter types:
 
 ```cpp
-#include <memory>
-#include <vector>
-#include <algorithm>
-
-class Database {
-public:
-    void connect() { std::cout << "Connected to database\n"; }
-    void disconnect() { std::cout << "Disconnected from database\n"; }
-    ~Database() { disconnect(); }
-};
-
-class DataManager {
-private:
-    std::unique_ptr<Database> db_;
-    
-public:
-    DataManager() : db_(std::make_unique<Database>()) {
-        db_->connect();
-    }
-    
-    // Move-only semantics (no copying)
-    DataManager(const DataManager&) = delete;
-    DataManager& operator=(const DataManager&) = delete;
-    
-    DataManager(DataManager&& other) noexcept : db_(std::move(other.db_)) {}
-    DataManager& operator=(DataManager&& other) noexcept {
-        if (this != &other) {
-            db_ = std::move(other.db_);
-        }
-        return *this;
-    }
-    
-    // Transfer ownership
-    std::unique_ptr<Database> releaseDatabase() {
-        return std::move(db_);
-    }
-};
-
-// Factory function returning unique ownership
-std::unique_ptr<Resource> createResource(int value) {
-    return std::make_unique<Resource>(value);
-}
-
-void uniquePtrExamples() {
-    // Array management
-    std::unique_ptr<int[]> numbers = std::make_unique<int[]>(100);
-    
-    // Container of unique_ptrs
-    std::vector<std::unique_ptr<Resource>> resources;
-    resources.push_back(createResource(10));
-    resources.push_back(createResource(20));
-    
-    // Move semantics in algorithms
-    std::sort(resources.begin(), resources.end(),
-        [](const std::unique_ptr<Resource>& a, const std::unique_ptr<Resource>& b) {
-            return a.get() < b.get();  // Sort by pointer address
-        });
-}
-```
-
-### shared_ptr: Shared Ownership
-
-```cpp
-#include <memory>
-#include <vector>
-#include <thread>
-
-class Logger {
-public:
-    void log(const std::string& message) {
-        std::cout << "[LOG] " << message << std::endl;
-    }
-    
-    ~Logger() {
-        std::cout << "Logger destroyed\n";
-    }
-};
-
-class Service {
-private:
-    std::shared_ptr<Logger> logger_;
-    std::string name_;
-    
-public:
-    Service(const std::string& name, std::shared_ptr<Logger> logger) 
-        : name_(name), logger_(std::move(logger)) {}
-    
-    void doWork() {
-        logger_->log(name_ + " is working");
-    }
-};
-
-void sharedPtrExamples() {
-    // Shared logger across multiple services
-    auto logger = std::make_shared<Logger>();
-    
-    std::vector<std::unique_ptr<Service>> services;
-    services.push_back(std::make_unique<Service>("Service1", logger));
-    services.push_back(std::make_unique<Service>("Service2", logger));
-    services.push_back(std::make_unique<Service>("Service3", logger));
-    
-    // All services share the same logger
-    for (auto& service : services) {
-        service->doWork();
-    }
-    
-    std::cout << "Logger use count: " << logger.use_count() << "\n";
-    
-    // Logger automatically destroyed when last shared_ptr is destroyed
-}
-
-// Thread-safe shared ownership
-void threadSafeSharing() {
-    auto resource = std::make_shared<Resource>(100);
-    
-    std::vector<std::thread> threads;
-    
-    for (int i = 0; i < 4; ++i) {
-        threads.emplace_back([resource]() {  // Capture by value (copies shared_ptr)
-            resource->use();  // Thread-safe reference counting
-        });
-    }
-    
-    for (auto& t : threads) {
-        t.join();
-    }
-}
-```
-
-### weak_ptr: Breaking Circular References
-
-```cpp
-#include <memory>
 #include <iostream>
 
-class Child;
+// Overloaded functions for different types
+void print(int value) 
+{
+    std::cout << "Printing int: " << value << '\n';
+}
 
-class Parent {
-public:
-    std::shared_ptr<Child> child_;
-    
-    Parent() { std::cout << "Parent created\n"; }
-    ~Parent() { std::cout << "Parent destroyed\n"; }
-    
-    void setChild(std::shared_ptr<Child> child) {
-        child_ = child;
-    }
-};
+void print(double value) 
+{
+    std::cout << "Printing double: " << value << '\n';
+}
 
-class Child {
-public:
-    std::weak_ptr<Parent> parent_;  // ✅ weak_ptr breaks the cycle
-    
-    Child() { std::cout << "Child created\n"; }
-    ~Child() { std::cout << "Child destroyed\n"; }
-    
-    void setParent(std::shared_ptr<Parent> parent) {
-        parent_ = parent;
-    }
-    
-    void doSomethingWithParent() {
-        if (auto parent = parent_.lock()) {  // Safe access
-            std::cout << "Child accessing parent\n";
-        } else {
-            std::cout << "Parent no longer exists\n";
-        }
-    }
-};
+void print(const std::string& value) 
+{
+    std::cout << "Printing string: " << value << '\n';
+}
 
-void demonstrateWeakPtr() {
-    auto parent = std::make_shared<Parent>();
-    auto child = std::make_shared<Child>();
+int main() 
+{
+    print(42);           // Calls print(int)
+    print(3.14);         // Calls print(double)
+    print("Hello");      // Calls print(const std::string&)
+    return 0;
+}
+```
+
+### Overloading Rules:
+- ✅ **Different parameter types**
+- ✅ **Different number of parameters**
+- ✅ **Different parameter order** (if types differ)
+- ❌ **Return type alone** (not sufficient for overloading)
+
+---
+
+## 11.2 - Function Overload Resolution
+
+### How the Compiler Chooses
+
+When you call an overloaded function, the compiler uses **overload resolution** to determine which function to call:
+
+```cpp
+void func(int x) { std::cout << "int version\n"; }
+void func(double x) { std::cout << "double version\n"; }
+void func(const std::string& x) { std::cout << "string version\n"; }
+
+int main() 
+{
+    func(42);        // Exact match: calls func(int)
+    func(3.14);      // Exact match: calls func(double)
+    func(42.0f);     // Promotion: float→double, calls func(double)
+    func("Hello");   // Conversion: const char*→std::string, calls func(const std::string&)
+    return 0;
+}
+```
+
+### Resolution Priority:
+1. **Exact match** (including const/reference conversions)
+2. **Promotions** (int→long, float→double)
+3. **Standard conversions** (int→double, derived→base)
+4. **User-defined conversions**
+5. **Ellipsis matches**
+
+---
+
+## 11.6 - Function Templates: The Generic Solution
+
+### The Problem with Overloading
+
+Writing multiple overloads is a maintenance nightmare:
+
+```cpp
+// Repetitive and error-prone!
+int max(int x, int y) { return (x < y) ? y : x; }
+double max(double x, double y) { return (x < y) ? y : x; }
+float max(float x, float y) { return (x < y) ? y : x; }
+long max(long x, long y) { return (x < y) ? y : x; }
+// ... and so on for every type!
+```
+
+### Enter Function Templates
+
+A **function template** is a blueprint that generates functions for different types:
+
+```cpp
+template <typename T>
+T max(T x, T y) 
+{
+    return (x < y) ? y : x;
+}
+
+int main() 
+{
+    std::cout << max<int>(5, 3) << '\n';      // Generates max<int>
+    std::cout << max<double>(2.7, 4.1) << '\n'; // Generates max<double>
+    std::cout << max<char>('a', 'z') << '\n';    // Generates max<char>
+    return 0;
+}
+```
+
+### Template Syntax Breakdown
+
+```cpp
+template <typename T>  // Template parameter declaration
+T max(T x, T y)       // Function template definition
+{
+    return (x < y) ? y : x;
+}
+```
+
+- `template` - Keyword indicating this is a template
+- `<typename T>` - Template parameter list (T is a placeholder type)
+- `T` - Can be replaced with any actual type
+- `typename` - Preferred over `class` (both work the same)
+
+---
+
+## 11.7 - Function Template Instantiation
+
+### How Templates Work
+
+Templates don't generate code until they're used. When you call a template function, the compiler performs **instantiation**:
+
+```cpp
+template <typename T>
+T square(T x) 
+{
+    return x * x;
+}
+
+int main() 
+{
+    auto result1 = square<int>(5);    // Instantiates square<int>
+    auto result2 = square<double>(3.14); // Instantiates square<double>
+    return 0;
+}
+```
+
+The compiler essentially generates these functions:
+
+```cpp
+// Generated by the compiler
+int square<int>(int x) 
+{
+    return x * x;
+}
+
+double square<double>(double x) 
+{
+    return x * x;
+}
+```
+
+### Template Argument Deduction
+
+You usually don't need to specify the template type explicitly:
+
+```cpp
+template <typename T>
+T add(T x, T y) 
+{
+    return x + y;
+}
+
+int main() 
+{
+    // All equivalent calls:
+    auto result1 = add<int>(5, 3);    // Explicit template argument
+    auto result2 = add<>(5, 3);       // Empty angle brackets
+    auto result3 = add(5, 3);         // Template argument deduction (preferred)
     
-    parent->setChild(child);
-    child->setParent(parent);  // No circular reference due to weak_ptr
-    
-    child->doSomethingWithParent();
-    
-    // Both objects properly destroyed when shared_ptrs go out of scope
+    return 0;
+}
+```
+
+### Template Argument Deduction Rules
+
+The compiler deduces template arguments from function arguments:
+
+```cpp
+template <typename T>
+void print(T value) 
+{
+    std::cout << value << '\n';
+}
+
+int main() 
+{
+    print(42);        // T deduced as int
+    print(3.14);      // T deduced as double
+    print("Hello");   // T deduced as const char*
+    print('A');       // T deduced as char
+    return 0;
 }
 ```
 
 ---
 
-## 24.2 - Move Semantics and Perfect Forwarding
+## 11.8 - Function Templates with Multiple Template Types
 
-### Understanding Value Categories
+### The Limitation of Single Type Templates
+
+```cpp
+template <typename T>
+T max(T x, T y)  // Both parameters must be the same type!
+{
+    return (x < y) ? y : x;
+}
+
+int main() 
+{
+    // max(5, 3.14); // ❌ ERROR: Can't deduce T (int vs double)
+    return 0;
+}
+```
+
+### Solution: Multiple Template Parameters
+
+```cpp
+template <typename T, typename U>
+auto max(T x, U y) -> decltype(x < y ? y : x)  // C++11 trailing return type
+{
+    return (x < y) ? y : x;
+}
+
+// Or in C++14+, simply:
+template <typename T, typename U>
+auto max(T x, U y) 
+{
+    return (x < y) ? y : x;
+}
+
+int main() 
+{
+    std::cout << max(5, 3.14) << '\n';    // T=int, U=double, returns double
+    std::cout << max(2.5, 1) << '\n';     // T=double, U=int, returns double
+    return 0;
+}
+```
+
+### Advanced Template Techniques
+
+#### Template Specialization for Type Safety
 
 ```cpp
 #include <iostream>
 #include <string>
-#include <utility>
 
-void demonstrateValueCategories() {
-    std::string str = "Hello";
-    
-    // lvalues (have names, can appear on left of assignment)
-    std::string& lref = str;        // lvalue reference
-    const std::string& clref = str; // const lvalue reference
-    
-    // rvalues (temporary objects, literals)
-    std::string&& rref = std::move(str);  // rvalue reference
-    std::string&& rref2 = "World";        // rvalue reference to temporary
-    
-    // Functions can be overloaded based on value category
-    auto result1 = processString(str);           // Calls lvalue version
-    auto result2 = processString(std::move(str)); // Calls rvalue version
-    auto result3 = processString("literal");      // Calls rvalue version
+template <typename T>
+T addOne(T x) 
+{
+    return x + 1;
 }
 
-// Overloaded functions for different value categories
-std::string processString(const std::string& s) {  // lvalue version
-    std::cout << "Processing lvalue: " << s << "\n";
-    return s;  // Copy
-}
+// Specialized version for strings - delete to prevent compilation
+template <>
+std::string addOne<std::string>(std::string x) = delete;
 
-std::string processString(std::string&& s) {  // rvalue version
-    std::cout << "Processing rvalue: " << s << "\n";
-    return std::move(s);  // Move
+int main() 
+{
+    std::cout << addOne(5) << '\n';       // ✅ Works: returns 6
+    std::cout << addOne(3.14) << '\n';    // ✅ Works: returns 4.14
+    // addOne(std::string("Hello"));      // ❌ Compile error: function deleted
+    return 0;
 }
 ```
 
-### Move Constructor and Move Assignment
+---
+
+## Advanced Template Features
+
+### Constexpr Function Templates
+
+Combining templates with constexpr for compile-time generic programming:
 
 ```cpp
-#include <vector>
-#include <memory>
-#include <algorithm>
+template <typename T>
+constexpr T factorial(T n) 
+{
+    return (n <= 1) ? 1 : n * factorial(n - 1);
+}
 
-class MovableResource {
-private:
-    std::unique_ptr<int[]> data_;
-    size_t size_;
+int main() 
+{
+    constexpr int fact5 = factorial(5);        // Computed at compile-time
+    constexpr long fact10 = factorial(10L);    // Different type, still compile-time
     
+    std::cout << "5! = " << fact5 << '\n';
+    std::cout << "10! = " << fact10 << '\n';
+    return 0;
+}
+```
+
+### Template with Non-Template Parameters
+
+```cpp
+template <typename T>
+void repeat(T value, int times = 1) 
+{
+    for (int i = 0; i < times; ++i) 
+    {
+        std::cout << value << ' ';
+    }
+    std::cout << '\n';
+}
+
+int main() 
+{
+    repeat("Hello", 3);    // Template: T=const char*, Non-template: times=3
+    repeat(42, 2);         // Template: T=int, Non-template: times=2
+    repeat(3.14);          // Template: T=double, Non-template: times=1 (default)
+    return 0;
+}
+```
+
+### Template Parameter Naming Conventions
+
+```cpp
+// Simple, obvious usage - single letters
+template <typename T>
+T simple(T value) { return value; }
+
+template <typename T, typename U, typename V>
+auto complex(T a, U b, V c) { return a + b + c; }
+
+// Complex usage - descriptive names
+template <typename Container, typename Predicate>
+void processIf(Container& container, Predicate pred) 
+{
+    // Implementation...
+}
+
+// Standard library style
+template <typename InputIt, typename OutputIt, typename Comparator>
+OutputIt customSort(InputIt first, InputIt last, OutputIt result, Comparator comp)
+{
+    // Implementation...
+}
+```
+
+---
+
+## Real-World Applications
+
+### Generic Algorithms
+
+```cpp
+template <typename T>
+void bubbleSort(T arr[], int size) 
+{
+    for (int i = 0; i < size - 1; ++i) 
+    {
+        for (int j = 0; j < size - i - 1; ++j) 
+        {
+            if (arr[j] > arr[j + 1]) 
+            {
+                T temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+}
+
+int main() 
+{
+    int intArr[] = {64, 34, 25, 12, 22, 11, 90};
+    double doubleArr[] = {3.1, 2.5, 1.8, 4.2};
+    
+    bubbleSort(intArr, 7);        // Works with int
+    bubbleSort(doubleArr, 4);     // Works with double
+    
+    return 0;
+}
+```
+
+### Type-Safe Containers
+
+```cpp
+template <typename T>
+class SimpleVector 
+{
+private:
+    T* data;
+    size_t size;
+    size_t capacity;
+
+public:
+    explicit SimpleVector(size_t initialCapacity = 10) 
+        : data(new T[initialCapacity]), size(0), capacity(initialCapacity) {}
+    
+    ~SimpleVector() { delete[] data; }
+    
+    void push_back(const T& item) 
+    {
+        if (size >= capacity) resize();
+        data[size++] = item;
+    }
+    
+    T& operator[](size_t index) { return data[index]; }
+    const T& operator[](size_t index) const { return data[index]; }
+    
+    size_t getSize() const { return size; }
+
+private:
+    void resize() 
+    {
+        capacity *= 2;
+        T* newData = new T[capacity];
+        for (size_t i = 0; i < size; ++i) 
+        {
+            newData[i] = data[i];
+        }
+        delete[] data;
+        data = newData;
+    }
+};
+
+int main() 
+{
+    SimpleVector<int> intVec;
+    SimpleVector<std::string> stringVec;
+    
+    intVec.push_back(1);
+    intVec.push_back(2);
+    
+    stringVec.push_back("Hello");
+    stringVec.push_back("World");
+    
+    return 0;
+}
+```
+
+---
+
+## Best Practices and Common Pitfalls
+
+### Do's:
+✅ **Use template argument deduction** when possible  
+✅ **Start with regular functions, convert to templates when needed**  
+✅ **Use meaningful names for non-trivial template parameters**  
+✅ **Combine with constexpr for compile-time computation**  
+✅ **Write comprehensive tests for different types**  
+
+### Don'ts:
+❌ **Don't overuse templates for simple, type-specific functions**  
+❌ **Don't ignore compiler error messages** (though they're complex)  
+❌ **Don't assume all types will work** without testing  
+❌ **Don't create overly complex template hierarchies**  
+
+### Common Pitfalls:
+
+#### 1. Template Bloat
+```cpp
+// This creates separate functions for every type used
+template <typename T>
+void heavyFunction(T value) 
+{
+    // Lots of code here...
+    // Each instantiation duplicates all this code
+}
+```
+
+#### 2. Cryptic Error Messages
+```cpp
+template <typename T>
+T badFunction(T x) 
+{
+    return x.nonexistentMethod(); // Will generate confusing errors
+}
+```
+
+#### 3. Static Variable Surprises
+```cpp
+template <typename T>
+void counter(T) 
+{
+    static int count = 0;    // Separate counter for each type!
+    std::cout << ++count << '\n';
+}
+
+int main() 
+{
+    counter(1);      // Prints 1
+    counter(2);      // Prints 2 (same int counter)
+    counter(3.14);   // Prints 1 (new double counter!)
+    return 0;
+}
+```
+
+---
+
+## The Power of Generic Programming
+
+Function templates represent a paradigm shift from type-specific programming to **generic programming**, where we focus on algorithms and logic rather than specific types. This approach:
+
+- **Reduces code duplication**
+- **Improves maintainability**
+- **Enhances type safety**
+- **Enables powerful abstractions**
+- **Facilitates code reuse**
+
+When combined with constexpr functions from Chapter F, templates enable both **compile-time computation** and **generic programming**, forming the foundation of modern C++'s powerful template system that we'll see extensively in the Standard Template Library (STL).
+
+Next, we'll explore how templates extend to classes and more advanced template metaprogramming techniques!
+
+# Chapter 12: Compound Data Types - Pointers & References
+
+## Building from Templates: Why Compound Types Matter
+
+In Chapter 11, we learned how templates let us write generic code. But templates often work with **compound data types** - types that are built from other types. Understanding pointers and references is crucial for mastering templates, STL containers, and modern C++ programming.
+
+---
+
+## 12.1 - Introduction to Compound Data Types
+
+### What Are Compound Data Types?
+
+**Compound data types** are types that are built from fundamental types or other compound types:
+
+```cpp
+// Fundamental types
+int x = 5;
+double y = 3.14;
+char c = 'A';
+
+// Compound types
+int* ptr;           // Pointer to int
+int& ref = x;       // Reference to int
+int arr[10];        // Array of ints
+std::string text;   // Class type (compound)
+```
+
+### Why Compound Types Are Essential
+
+```cpp
+// Without compound types, this is impossible:
+template <typename T>
+void processLargeObject(T obj)    // ❌ Expensive copy!
+{
+    // Process obj...
+}
+
+// With compound types, we can do this:
+template <typename T>
+void processLargeObject(const T& obj)    // ✅ Efficient reference!
+{
+    // Process obj without copying...
+}
+```
+
+---
+
+## 12.2 - Value Categories: Lvalues and Rvalues
+
+### The Foundation of Modern C++
+
+Understanding **value categories** is essential for mastering references, move semantics, and template programming.
+
+### What Are Value Categories?
+
+Every expression in C++ has two properties:
+1. **Type** - what kind of data (int, double, etc.)
+2. **Value Category** - whether it evaluates to an object or a value
+
+```cpp
+int x = 5;          // x has type 'int' and is an lvalue
+int y = x + 1;      // x is lvalue, x+1 is rvalue, y is lvalue
+```
+
+### Lvalues: "Locator Values"
+
+An lvalue (pronounced "ell-value", short for "left value" or "locator value") is an expression that evaluates to an identifiable object or function:
+
+```cpp
+int main() 
+{
+    int x = 5;           // x is an lvalue (has identity, persists)
+    int arr[5];          // arr is an lvalue
+    const int c = 10;    // c is a non-modifiable lvalue
+    
+    // Lvalue expressions:
+    x;                   // ✅ Variable
+    arr[0];              // ✅ Array element
+    ++x;                 // ✅ Pre-increment returns lvalue
+    (x + y);             // ❌ This is actually an rvalue!
+    
+    return 0;
+}
+```
+
+### Rvalues: "Right Values"
+
+An rvalue is an expression that is not an lvalue. Rvalue expressions evaluate to a value:
+
+```cpp
+int getValue() { return 42; }
+
+int main() 
+{
+    int x = 5;
+    
+    // Rvalue expressions:
+    42;                  // ✅ Literal
+    x + 1;               // ✅ Arithmetic result
+    getValue();          // ✅ Function return value
+    x++;                 // ✅ Post-increment returns rvalue
+    static_cast<int>(3.14); // ✅ Cast result
+    
+    return 0;
+}
+```
+
+### Visual Test: Determining Value Categories
+
+Here's a practical way to test value categories:
+
+```cpp
+#include <iostream>
+#include <string>
+
+// T& is an lvalue reference - preferred for lvalues
+template <typename T>
+constexpr bool is_lvalue(T&) { return true; }
+
+// T&& is an rvalue reference - preferred for rvalues  
+template <typename T>
+constexpr bool is_lvalue(T&&) { return false; }
+
+#define TEST_CATEGORY(expr) \
+    std::cout << #expr << " is " << (is_lvalue(expr) ? "lvalue" : "rvalue") << '\n';
+
+int getNumber() { return 42; }
+
+int main() 
+{
+    int x = 5;
+    
+    TEST_CATEGORY(x);                    // lvalue
+    TEST_CATEGORY(42);                   // rvalue
+    TEST_CATEGORY(x + 1);                // rvalue  
+    TEST_CATEGORY(++x);                  // lvalue
+    TEST_CATEGORY(x++);                  // rvalue
+    TEST_CATEGORY(getNumber());          // rvalue
+    TEST_CATEGORY("Hello");              // lvalue (special case!)
+    TEST_CATEGORY(std::string("Hello")); // rvalue
+    
+    return 0;
+}
+```
+
+### Key Insight: Assignment Rules
+
+Assignment requires the left operand to be a modifiable lvalue expression and the right operand to be an rvalue expression:
+
+```cpp
+int main() 
+{
+    int x = 5, y = 10;
+    
+    x = y;              // ✅ lvalue = rvalue (y converts to rvalue)
+    x = 42;             // ✅ lvalue = rvalue
+    x = x + 1;          // ✅ lvalue = rvalue
+    
+    // 42 = x;          // ❌ rvalue = lvalue (illegal!)
+    // x + 1 = y;       // ❌ rvalue = rvalue (illegal!)
+    
+    return 0;
+}
+```
+
+---
+
+## 12.3 - Lvalue References
+
+### What Are References?
+
+A **reference** acts as an alias for an existing object - it's essentially another name for the same memory location:
+
+```cpp
+int main() 
+{
+    int x = 5;           // Original variable
+    int& ref = x;        // ref is now an alias for x
+    
+    std::cout << x << '\n';      // Prints: 5
+    std::cout << ref << '\n';    // Prints: 5 (same object)
+    
+    ref = 10;                    // Changes x through ref
+    std::cout << x << '\n';      // Prints: 10
+    
+    x = 20;                      // Changes ref through x  
+    std::cout << ref << '\n';    // Prints: 20
+    
+    return 0;
+}
+```
+
+### Reference Rules and Limitations
+
+```cpp
+int main() 
+{
+    int x = 5, y = 10;
+    
+    // ✅ Valid reference declarations
+    int& ref1 = x;           // Must initialize when declared
+    int& ref2 = y;           // Each reference needs separate declaration
+    
+    // ❌ Invalid reference operations
+    // int& ref3;            // Error: references must be initialized
+    // ref1 = ref2;          // This assigns y's value to x (doesn't rebind ref1!)
+    // int& ref4 = 42;       // Error: can't bind to rvalue
+    
+    return 0;
+}
+```
+
+### References vs Pointers: First Look
+
+```cpp
+int main() 
+{
+    int x = 5, y = 10;
+    
+    // References
+    int& ref = x;        // Must initialize, becomes alias
+    ref = 20;            // Changes x to 20
+    // ref = &y;         // ❌ Can't rebind reference
+    
+    // Pointers (preview)
+    int* ptr = &x;       // Stores address of x
+    *ptr = 30;           // Changes x to 30
+    ptr = &y;            // ✅ Can point to different objects
+    
+    return 0;
+}
+```
+
+---
+
+## 12.4 - Lvalue References to Const
+
+### The Power of Const References
+
+Lvalue references to const can bind to modifiable lvalues, non-modifiable lvalues, and rvalues:
+
+```cpp
+#include <iostream>
+
+void printValue(const int& value)    // Can accept any int expression
+{
+    std::cout << "Value: " << value << '\n';
+}
+
+int getValue() { return 42; }
+
+int main() 
+{
+    int x = 5;
+    const int c = 10;
+    
+    // const references can bind to anything!
+    printValue(x);           // ✅ Modifiable lvalue
+    printValue(c);           // ✅ Non-modifiable lvalue  
+    printValue(42);          // ✅ Rvalue literal
+    printValue(x + 1);       // ✅ Rvalue expression
+    printValue(getValue());  // ✅ Rvalue from function
+    
+    return 0;
+}
+```
+
+### Lifetime Extension Magic
+
+When a const reference is directly bound to a temporary, the lifetime of that temporary is extended to match the lifetime of the reference:
+
+```cpp
+#include <iostream>
+#include <string>
+
+int main() 
+{
+    // Without lifetime extension:
+    // auto temp = std::string("Hello") + " World";
+    // const std::string& ref = temp;  // Normal reference to existing object
+    
+    // With lifetime extension:
+    const std::string& ref = std::string("Hello") + " World";  // Temporary extended!
+    
+    std::cout << ref << '\n';  // ✅ Safe to use - temporary still alive
+    
+    return 0;
+}
+```
+
+---
+
+## 12.7 - Introduction to Pointers
+
+### Understanding Memory Addresses
+
+When the code generated for this definition is executed, a piece of memory from RAM will be assigned to this object:
+
+```cpp
+#include <iostream>
+
+int main() 
+{
+    int x = 5;           // Assume assigned to address 1000
+    char c = 'A';        // Assume assigned to address 1004
+    double d = 3.14;     // Assume assigned to address 1008
+    
+    std::cout << "x value: " << x << ", address: " << &x << '\n';
+    std::cout << "c value: " << c << ", address: " << (void*)&c << '\n';  
+    std::cout << "d value: " << d << ", address: " << &d << '\n';
+    
+    return 0;
+}
+```
+
+### The Address-of Operator (&)
+
+The address-of operator (&) returns the memory address of its operand:
+
+```cpp
+#include <iostream>
+
+int main() 
+{
+    int x = 42;
+    double arr[3] = {1.1, 2.2, 3.3};
+    
+    std::cout << "Address of x: " << &x << '\n';
+    std::cout << "Address of arr[0]: " << &arr[0] << '\n';
+    std::cout << "Address of arr[1]: " << &arr[1] << '\n';
+    std::cout << "Address of arr[2]: " << &arr[2] << '\n';
+    
+    // Notice how array elements are contiguous in memory!
+    return 0;
+}
+```
+
+### The Dereference Operator (*)
+
+The dereference operator (*) returns the value at a given memory address as an lvalue:
+
+```cpp
+#include <iostream>
+
+int main() 
+{
+    int x = 100;
+    
+    std::cout << "Direct access: " << x << '\n';           // 100
+    std::cout << "Address: " << &x << '\n';                // e.g., 0x7fff5fbff6ac
+    std::cout << "Indirect access: " << *(&x) << '\n';     // 100
+    
+    // Address-of and dereference are opposites
+    // &x gets the address, *(&x) gets the value back
+    
+    return 0;
+}
+```
+
+---
+
+## 12.8 - Pointer Fundamentals
+
+### Declaring and Initializing Pointers
+
+A pointer is an object that holds a memory address (typically of another variable) as its value:
+
+```cpp
+#include <iostream>
+
+int main() 
+{
+    int x = 5, y = 10;
+    
+    // Pointer declarations and initialization
+    int* ptr1;           // ❌ Uninitialized (wild pointer)
+    int* ptr2{};         // ✅ Null pointer
+    int* ptr3 = &x;      // ✅ Points to x
+    int* ptr4{&y};       // ✅ Points to y (preferred syntax)
+    
+    std::cout << "x = " << x << ", *ptr3 = " << *ptr3 << '\n';  // Both print 5
+    std::cout << "y = " << y << ", *ptr4 = " << *ptr4 << '\n';  // Both print 10
+    
+    return 0;
+}
+```
+
+### Pointer Assignment: Two Ways
+
+We can use assignment with pointers in two different ways: To change what the pointer is pointing at (by assigning the pointer a new address) To change the value being pointed at (by assigning the dereferenced pointer a new value):
+
+```cpp
+#include <iostream>
+
+int main() 
+{
+    int x = 5, y = 10, z = 15;
+    int* ptr = &x;
+    
+    std::cout << "Initially: *ptr = " << *ptr << '\n';  // 5
+    
+    // Method 1: Change what pointer points to
+    ptr = &y;
+    std::cout << "After ptr = &y: *ptr = " << *ptr << '\n';  // 10
+    
+    // Method 2: Change the value being pointed at
+    *ptr = 99;
+    std::cout << "After *ptr = 99: y = " << y << '\n';  // 99 (y changed!)
+    
+    return 0;
+}
+```
+
+### Pointers vs References Comparison
+
+Pointers and lvalue references behave similarly, but with key differences:
+
+```cpp
+#include <iostream>
+
+int main() 
+{
+    int x = 5, y = 10;
+    
+    // References
+    int& ref = x;        // Must initialize, becomes permanent alias
+    ref = 20;            // Changes x to 20
+    ref = y;             // ❌ This assigns y's VALUE to x, doesn't rebind!
+    
+    // Pointers  
+    int* ptr = &x;       // Initialize with address
+    *ptr = 30;           // Changes x to 30
+    ptr = &y;            // ✅ Now points to y instead
+    *ptr = 40;           // Changes y to 40
+    
+    std::cout << "x = " << x << ", y = " << y << '\n';  // x = 30, y = 40
+    
+    return 0;
+}
+```
+
+### Key Differences Summary
+
+| Feature | References | Pointers |
+|---------|------------|----------|
+| **Initialization** | Required | Optional (but should) |
+| **Rebinding** | ❌ Cannot | ✅ Can |
+| **Null State** | ❌ Must bind to object | ✅ Can be null |
+| **Arithmetic** | ❌ Not allowed | ✅ Supported |
+| **Memory Overhead** | None (alias) | Yes (stores address) |
+| **Syntax** | Implicit | Explicit (* and &) |
+| **Safety** | Safer | More dangerous |
+
+---
+
+## Advanced Applications
+
+### Template Functions with References and Pointers
+
+Combining our knowledge with templates from Chapter 11:
+
+```cpp
+#include <iostream>
+#include <string>
+
+// Template function using const reference (efficient for large objects)
+template <typename T>
+void printTwice(const T& value) 
+{
+    std::cout << value << '\n';
+    std::cout << value << '\n';
+}
+
+// Template function using pointers (can handle optional parameters)
+template <typename T>
+void printIfNotNull(const T* ptr) 
+{
+    if (ptr != nullptr) 
+    {
+        std::cout << *ptr << '\n';
+    } 
+    else 
+    {
+        std::cout << "null pointer!\n";
+    }
+}
+
+int main() 
+{
+    std::string bigString = "This is a potentially large string object";
+    int number = 42;
+    
+    // Efficient - no copying of large string
+    printTwice(bigString);
+    printTwice(number);
+    
+    // Safe pointer handling
+    int* validPtr = &number;
+    int* nullPtr = nullptr;
+    
+    printIfNotNull(validPtr);    // Prints: 42
+    printIfNotNull(nullPtr);     // Prints: null pointer!
+    
+    return 0;
+}
+```
+
+### Smart Pointer Preview
+
+Modern C++ provides safer alternatives to raw pointers:
+
+```cpp
+#include <iostream>
+#include <memory>
+#include <string>
+
+int main() 
+{
+    // Raw pointer (dangerous)
+    int* rawPtr = new int(42);
+    std::cout << *rawPtr << '\n';
+    delete rawPtr;  // Must remember to delete!
+    
+    // Smart pointer (safe) - C++14
+    auto smartPtr = std::make_unique<int>(42);
+    std::cout << *smartPtr << '\n';
+    // Automatic cleanup - no delete needed!
+    
+    // Smart pointers work great with templates
+    auto smartString = std::make_unique<std::string>("Hello, Smart Pointers!");
+    std::cout << *smartString << '\n';
+    
+    return 0;
+}
+```
+
+### Reference Wrappers for Container Storage
+
+References can't be stored in containers, but we can use `std::reference_wrapper`:
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <functional>
+
+int main() 
+{
+    int a = 1, b = 2, c = 3;
+    
+    // Can't do: std::vector<int&> refs;  // ❌ Error!
+    
+    // Solution: use reference_wrapper
+    std::vector<std::reference_wrapper<int>> refs = {a, b, c};
+    
+    // Modify through references
+    for (auto& ref : refs) 
+    {
+        ref.get() *= 2;  // Double each value
+    }
+    
+    std::cout << "a = " << a << ", b = " << b << ", c = " << c << '\n';
+    // Prints: a = 2, b = 4, c = 6
+    
+    return 0;
+}
+```
+
+---
+
+## Best Practices and Common Pitfalls
+
+### Do's ✅
+
+1. **Always initialize pointers**:
+```cpp
+int* ptr = nullptr;     // ✅ Safe default
+int* ptr = &variable;   // ✅ Point to valid object
+```
+
+2. **Use const references for function parameters**:
+```cpp
+template <typename T>
+void process(const T& obj) {  // ✅ Efficient, safe
+    // Read-only access to obj
+}
+```
+
+3. **Prefer references when you don't need rebinding**:
+```cpp
+void increment(int& value) {  // ✅ Clear intent
+    ++value;
+}
+```
+
+4. **Check pointers before dereferencing**:
+```cpp
+if (ptr != nullptr) {   // ✅ Safe
+    std::cout << *ptr;
+}
+```
+
+### Don'ts ❌
+
+1. **Don't use uninitialized pointers**:
+```cpp
+int* ptr;          // ❌ Wild pointer
+std::cout << *ptr; // ❌ Undefined behavior
+```
+
+2. **Don't dereference dangling pointers**:
+```cpp
+int* ptr = nullptr;
+{
+    int x = 5;
+    ptr = &x;
+}  // x destroyed here
+std::cout << *ptr;  // ❌ Undefined behavior
+```
+
+3. **Don't confuse assignment vs rebinding**:
+```cpp
+int x = 5, y = 10;
+int& ref = x;
+ref = y;        // ❌ This assigns y's VALUE to x, doesn't rebind!
+```
+
+### Memory Management Best Practices
+
+```cpp
+#include <memory>
+
+// ❌ Manual memory management (error-prone)
+void badExample() 
+{
+    int* ptr = new int(42);
+    // ... do work ...
+    delete ptr;  // Easy to forget or miss on exception!
+}
+
+// ✅ RAII with smart pointers
+void goodExample() 
+{
+    auto ptr = std::make_unique<int>(42);
+    // ... do work ...
+    // Automatic cleanup, exception-safe
+}
+
+// ✅ Stack allocation when possible
+void bestExample() 
+{
+    int value = 42;  // No dynamic allocation needed
+    // ... do work ...
+    // Automatic cleanup
+}
+```
+
+---
+
+## Real-World Applications
+
+### Implementing a Generic Swap Function
+
+```cpp
+template <typename T>
+void swap(T& a, T& b) 
+{
+    T temp = a;  // Copy a
+    a = b;       // Copy b to a
+    b = temp;    // Copy temp to b
+}
+
+// More efficient for large objects (uses pointers internally)
+template <typename T>
+void swapPtr(T* a, T* b) 
+{
+    if (a && b) {  // Safety check
+        T temp = *a;
+        *a = *b;
+        *b = temp;
+    }
+}
+
+int main() 
+{
+    int x = 10, y = 20;
+    std::cout << "Before: x=" << x << ", y=" << y << '\n';
+    
+    swap(x, y);
+    std::cout << "After: x=" << x << ", y=" << y << '\n';
+    
+    return 0;
+}
+```
+
+### Building Linked Data Structures
+
+```cpp
+#include <iostream>
+#include <memory>
+
+template <typename T>
+struct Node 
+{
+    T data;
+    std::unique_ptr<Node<T>> next;
+    
+    Node(T value) : data(value), next(nullptr) {}
+};
+
+template <typename T>
+class LinkedList 
+{
+private:
+    std::unique_ptr<Node<T>> head;
+    
+public:
+    void push_front(T value) 
+    {
+        auto newNode = std::make_unique<Node<T>>(value);
+        newNode->next = std::move(head);
+        head = std::move(newNode);
+    }
+    
+    void print() const 
+    {
+        Node<T>* current = head.get();  // Raw pointer for traversal
+        while (current != nullptr) 
+        {
+            std::cout << current->data << " -> ";
+            current = current->next.get();
+        }
+        std::cout << "null\n";
+    }
+};
+
+int main() 
+{
+    LinkedList<int> list;
+    list.push_front(3);
+    list.push_front(2);
+    list.push_front(1);
+    list.print();  // Prints: 1 -> 2 -> 3 -> null
+    
+    return 0;
+}
+```
+
+---
+
+## Conclusion
+
+Understanding pointers and references is foundational to mastering:
+
+- **Template programming** (efficient parameter passing)
+- **STL containers** (iterators are sophisticated pointers)
+- **Object relationships** (composition, aggregation)
+- **Memory management** (smart pointers, RAII)
+- **Performance optimization** (avoiding unnecessary copies)
+
+The concepts in this chapter directly enable the advanced C++ features we'll explore next, particularly STL containers, algorithms, and modern memory management techniques. The distinction between lvalues and rvalues becomes even more important when we discuss move semantics in later chapters.
+
+Next up: **Chapter 13 - Enumerations and Structs**, which will show how to create our own compound data types!
+
+# Chapter 13: Enumerations and Structs - Building User-Defined Types
+
+## Building from Pointers & References: Creating Your Own Types
+
+In Chapter 12, we mastered compound data types that work with existing types. Now we'll learn to create our own **user-defined types** using enumerations and structs. These are the building blocks for object-oriented programming and essential for creating meaningful, type-safe code.
+
+---
+
+## 13.1 - Introduction to Program-Defined (User-Defined) Types
+
+### The Need for Custom Types
+
+Consider representing different states in a game:
+
+```cpp
+// Using magic numbers (bad approach)
+int gameState = 0;    // What does 0 mean?
+int playerState = 2;  // What does 2 mean?
+
+if (gameState == 1) { /* do something */ }  // Magic number - unclear!
+```
+
+### What Are Program-Defined Types?
+
+**Program-defined types** (also called user-defined types) are custom types that we create for use in our own programs:
+
+```cpp
+// Better approach with user-defined types
+enum class GameState 
+{
+    menu,
+    playing,
+    paused,
+    gameOver
+};
+
+struct Player 
+{
+    std::string name;
+    int health;
+    int score;
+};
+
+GameState currentState = GameState::playing;  // Clear and type-safe!
+Player hero { "Link", 100, 0 };
+```
+
+### Categories of Program-Defined Types
+
+1. **Enumerated types** (unscoped and scoped enumerations)
+2. **Class types** (including structs, classes, and unions)
+
+Both must be **defined before use** and require a **type definition**.
+
+---
+
+## 13.2 - Unscoped Enumerations
+
+### Basic Unscoped Enumerations
+
+An enumeration (enum) defines a set of named integral constants:
+
+```cpp
+#include <iostream>
+
+// Define an enumeration for colors
+enum Color 
+{
+    red,      // assigned value 0
+    green,    // assigned value 1  
+    blue,     // assigned value 2
+    yellow    // assigned value 3
+};
+
+int main() 
+{
+    Color paint = red;        // paint now holds the value corresponding to red
+    Color house = green;      // house now holds the value corresponding to green
+    Color apple = red;        // apple now holds the value corresponding to red
+    
+    std::cout << "Paint color: " << paint << '\n';  // prints 0
+    std::cout << "House color: " << house << '\n';  // prints 1
+    
+    return 0;
+}
+```
+
+### Explicit Value Assignment
+
+You can explicitly assign values to enumerators:
+
+```cpp
+enum Status 
+{
+    ready = 10,      // explicitly assigned 10
+    waiting,         // assigned 11 (10 + 1)
+    processing = 25, // explicitly assigned 25  
+    complete         // assigned 26 (25 + 1)
+};
+
+enum Priority 
+{
+    low = 1,
+    medium = 5,
+    high = 10,
+    critical = 20
+};
+
+int main() 
+{
+    Status currentStatus = processing;
+    Priority taskPriority = high;
+    
+    std::cout << "Status: " << currentStatus << '\n';    // prints 25
+    std::cout << "Priority: " << taskPriority << '\n';   // prints 10
+    
+    return 0;
+}
+```
+
+### Problems with Unscoped Enumerations
+
+#### 1. Namespace Pollution
+
+```cpp
+enum Animal 
+{
+    cat,
+    dog,
+    bird
+};
+
+enum Transport 
+{
+    car,
+    // cat,   // ❌ Error: 'cat' already declared!
+    plane
+};
+
+int main() 
+{
+    // Enumerators are in global scope
+    Animal pet = cat;       // ✅ Works
+    Transport vehicle = car; // ✅ Works
+    
+    return 0;
+}
+```
+
+#### 2. Unwanted Implicit Conversions
+
+```cpp
+enum Color { red, blue };
+enum Fruit { banana, apple };
+
+int main() 
+{
+    Color color = red;      // red = 0
+    Fruit fruit = banana;   // banana = 0
+    
+    if (color == fruit)     // ❌ This compiles but makes no sense!
+    {
+        std::cout << "Color and fruit are equal!\n"; // This prints!
+    }
+    
+    // Even worse:
+    Color paint = red;
+    int number = paint + 5;  // ❌ Unwanted implicit conversion
+    
+    return 0;
+}
+```
+
+---
+
+## 13.6 - Scoped Enumerations (enum class)
+
+### The Solution: Scoped Enumerations
+
+**Scoped enumerations** (enum class) solve the problems of unscoped enumerations:
+
+```cpp
+#include <iostream>
+
+enum class Color 
+{
+    red,      // Color::red
+    green,    // Color::green
+    blue      // Color::blue
+};
+
+enum class Fruit 
+{
+    apple,    // Fruit::apple
+    banana,   // Fruit::banana  
+    orange    // Fruit::orange
+};
+
+int main() 
+{
+    Color paint = Color::red;       // ✅ Must use scope resolution
+    Fruit snack = Fruit::apple;     // ✅ Must use scope resolution
+    
+    // These no longer compile (good!):
+    // if (paint == snack) {}       // ❌ Error: can't compare different enum types
+    // int value = paint;           // ❌ Error: no implicit conversion to int
+    
+    // This works (same type comparison):
+    if (paint == Color::red) 
+    {
+        std::cout << "Paint is red!\n";
+    }
+    
+    return 0;
+}
+```
+
+### Explicit Conversions When Needed
+
+Sometimes you need the underlying integer value:
+
+```cpp
+#include <iostream>
+#include <utility>  // for std::to_underlying (C++23)
+
+enum class ErrorCode 
+{
+    none = 0,
+    fileNotFound = 404,
+    serverError = 500,
+    timeout = 408
+};
+
+void logError(ErrorCode code) 
+{
+    // Method 1: static_cast (all C++ versions)
+    std::cout << "Error code: " << static_cast<int>(code) << '\n';
+    
+    // Method 2: std::to_underlying (C++23 - preferred)
+    // std::cout << "Error code: " << std::to_underlying(code) << '\n';
+}
+
+int main() 
+{
+    ErrorCode error = ErrorCode::fileNotFound;
+    logError(error);  // prints: Error code: 404
+    
+    return 0;
+}
+```
+
+### Modern C++20: using enum Statements
+
+Reduce repetition in switch statements:
+
+```cpp
+#include <iostream>
+#include <string_view>
+
+enum class Direction 
+{
+    north,
+    south,
+    east,
+    west
+};
+
+std::string_view getDirectionName(Direction dir) 
+{
+    using enum Direction;  // C++20: Import all enumerators
+    
+    switch (dir) 
+    {
+        case north: return "North";  // No need for Direction::north
+        case south: return "South";
+        case east:  return "East";
+        case west:  return "West";
+        default:    return "Unknown";
+    }
+}
+
+int main() 
+{
+    Direction playerDirection = Direction::north;
+    std::cout << "Moving " << getDirectionName(playerDirection) << '\n';
+    
+    return 0;
+}
+```
+
+---
+
+## 13.7 - Introduction to Structs
+
+### The Problem: Related Data Scattered
+
+Imagine tracking employee information with separate variables:
+
+```cpp
+// Problematic approach
+std::string employeeName;
+std::string employeeTitle;
+int employeeAge;
+int employeeId;
+double employeeWage;
+
+// Hard to manage, pass to functions, or scale to multiple employees!
+```
+
+### The Solution: Structs
+
+A **struct** bundles related variables together into a single type:
+
+```cpp
+#include <iostream>
+#include <string>
+
+// Define the Employee struct type
+struct Employee 
+{
+    int id{};           // Data member (value-initialized)
+    std::string name;   // Data member
+    std::string title;  // Data member
+    int age{};         // Data member  
+    double wage{};     // Data member
+};
+
+int main() 
+{
+    // Create Employee objects
+    Employee joe{};     // All members value-initialized
+    Employee sarah{};   // Separate Employee object
+    
+    // Access members using the dot operator
+    joe.id = 101;
+    joe.name = "Joe Smith";
+    joe.title = "Developer";
+    joe.age = 32;
+    joe.wage = 75000.0;
+    
+    sarah.id = 102;
+    sarah.name = "Sarah Johnson";
+    sarah.title = "Manager";
+    sarah.age = 28;
+    sarah.wage = 85000.0;
+    
+    // Use the data
+    std::cout << joe.name << " (ID: " << joe.id << ") earns $" << joe.wage << '\n';
+    std::cout << sarah.name << " (ID: " << sarah.id << ") earns $" << sarah.wage << '\n';
+    
+    if (sarah.wage > joe.wage) 
+    {
+        std::cout << sarah.name << " earns more than " << joe.name << '\n';
+    }
+    
+    return 0;
+}
+```
+
+---
+
+## 13.8 - Struct Aggregate Initialization
+
+### List Initialization of Structs
+
+You can initialize struct members directly using brace initialization:
+
+```cpp
+#include <iostream>
+#include <string>
+
+struct Point3D 
+{
+    double x{};
+    double y{};
+    double z{};
+};
+
+struct RGB 
+{
+    int red{};
+    int green{};  
+    int blue{};
+};
+
+int main() 
+{
+    // Aggregate initialization
+    Point3D origin{};              // All members = 0.0
+    Point3D position{1.5, 2.7, 3.2}; // x=1.5, y=2.7, z=3.2
+    
+    RGB white{255, 255, 255};      // red=255, green=255, blue=255
+    RGB red{255, 0, 0};            // red=255, green=0, blue=0
+    RGB partialColor{100};         // red=100, green=0, blue=0
+    
+    std::cout << "Position: (" << position.x << ", " << position.y << ", " << position.z << ")\n";
+    std::cout << "Red color: RGB(" << red.red << ", " << red.green << ", " << red.blue << ")\n";
+    
+    return 0;
+}
+```
+
+### Designated Initializers (C++20)
+
+Make initialization more explicit and readable:
+
+```cpp
+#include <iostream>
+#include <string>
+
+struct Car 
+{
+    std::string brand;
+    std::string model;
+    int year{};
+    double price{};
+    bool isElectric{};
+};
+
+int main() 
+{
+    // C++20 designated initializers
+    Car tesla {
+        .brand = "Tesla",
+        .model = "Model 3",
+        .year = 2023,
+        .price = 35000.0,
+        .isElectric = true
+    };
+    
+    Car honda {
+        .brand = "Honda",
+        .model = "Civic",
+        .year = 2022,
+        .price = 23000.0
+        // isElectric defaults to false
+    };
+    
+    std::cout << tesla.brand << " " << tesla.model << " (" << tesla.year << ")\n";
+    std::cout << "Electric: " << (tesla.isElectric ? "Yes" : "No") << "\n";
+    
+    return 0;
+}
+```
+
+---
+
+## 13.9 - Default Member Initialization
+
+### Setting Default Values in the Struct Definition
+
+You can provide default values for struct members:
+
+```cpp
+#include <iostream>
+#include <string>
+
+struct GameCharacter 
+{
+    std::string name = "Unknown";    // Default value
+    int health = 100;               // Default value
+    int mana = 50;                  // Default value
+    int level = 1;                  // Default value
+    bool isAlive = true;            // Default value
+};
+
+int main() 
+{
+    // Use defaults
+    GameCharacter npc{};
+    std::cout << "NPC: " << npc.name << ", Health: " << npc.health << '\n';
+    
+    // Override some defaults
+    GameCharacter hero{"Link", 120, 75, 5};  // name, health, mana, level
+    std::cout << "Hero: " << hero.name << ", Level: " << hero.level << '\n';
+    
+    // Override specific members (C++20 designated initializers)
+    GameCharacter boss{
+        .name = "Ganondorf",
+        .health = 500,
+        .level = 50
+        // mana, isAlive use defaults
+    };
+    
+    std::cout << "Boss: " << boss.name << ", Health: " << boss.health 
+              << ", Mana: " << boss.mana << '\n';
+    
+    return 0;
+}
+```
+
+---
+
+## 13.10 - Passing and Returning Structs
+
+### Efficient Function Parameters
+
+Use const references to avoid copying large structs:
+
+```cpp
+#include <iostream>
+#include <string>
+
+struct Student 
+{
+    std::string name;
+    int id{};
+    double gpa{};
+    std::string major;
+};
+
+// ❌ Inefficient: copies the entire struct
+void displayStudentCopy(Student s) 
+{
+    std::cout << s.name << " (ID: " << s.id << ", GPA: " << s.gpa << ")\n";
+}
+
+// ✅ Efficient: passes by const reference
+void displayStudent(const Student& s) 
+{
+    std::cout << s.name << " (ID: " << s.id << ", GPA: " << s.gpa << ")\n";
+}
+
+// ✅ Modify struct through non-const reference
+void updateGPA(Student& s, double newGPA) 
+{
+    s.gpa = newGPA;
+}
+
+// ✅ Return struct by value (modern compilers optimize this)
+Student createStudent(const std::string& name, int id, double gpa, const std::string& major) 
+{
+    return Student{name, id, gpa, major};
+}
+
+int main() 
+{
+    Student alice = createStudent("Alice Johnson", 12345, 3.85, "Computer Science");
+    
+    displayStudent(alice);        // Efficient const reference
+    
+    updateGPA(alice, 3.92);       // Modify through reference
+    displayStudent(alice);        // Show updated GPA
+    
+    return 0;
+}
+```
+
+### Returning Multiple Values with Structs
+
+```cpp
+#include <iostream>
+#include <cmath>
+
+struct Coordinates 
+{
+    double x;
+    double y;
+};
+
+struct PolarCoordinates 
+{
+    double radius;
+    double angle;  // in radians
+};
+
+// Convert Cartesian to Polar coordinates
+PolarCoordinates toPolar(const Coordinates& cartesian) 
+{
+    double radius = std::sqrt(cartesian.x * cartesian.x + cartesian.y * cartesian.y);
+    double angle = std::atan2(cartesian.y, cartesian.x);
+    
+    return PolarCoordinates{radius, angle};
+}
+
+// Convert Polar to Cartesian coordinates
+Coordinates toCartesian(const PolarCoordinates& polar) 
+{
+    double x = polar.radius * std::cos(polar.angle);
+    double y = polar.radius * std::sin(polar.angle);
+    
+    return Coordinates{x, y};
+}
+
+int main() 
+{
+    Coordinates point{3.0, 4.0};
+    std::cout << "Cartesian: (" << point.x << ", " << point.y << ")\n";
+    
+    PolarCoordinates polar = toPolar(point);
+    std::cout << "Polar: radius=" << polar.radius << ", angle=" << polar.angle << " rad\n";
+    
+    Coordinates converted = toCartesian(polar);
+    std::cout << "Back to Cartesian: (" << converted.x << ", " << converted.y << ")\n";
+    
+    return 0;
+}
+```
+
+---
+
+## Advanced Applications
+
+### Template Structs
+
+Combine structs with templates for generic programming:
+
+```cpp
+#include <iostream>
+#include <string>
+
+template <typename T>
+struct Pair 
+{
+    T first;
+    T second;
+    
+    // Member functions
+    T sum() const { return first + second; }
+    T max() const { return (first > second) ? first : second; }
+    void swap() { std::swap(first, second); }
+};
+
+// Template specialization for string concatenation
+template <>
+std::string Pair<std::string>::sum() const 
+{
+    return first + " " + second;
+}
+
+int main() 
+{
+    Pair<int> numbers{10, 20};
+    std::cout << "Sum: " << numbers.sum() << '\n';        // 30
+    std::cout << "Max: " << numbers.max() << '\n';        // 20
+    
+    Pair<double> decimals{3.14, 2.71};
+    std::cout << "Sum: " << decimals.sum() << '\n';       // 5.85
+    
+    Pair<std::string> words{"Hello", "World"};
+    std::cout << "Combined: " << words.sum() << '\n';     // Hello World
+    
+    return 0;
+}
+```
+
+### Nested Structs and Complex Data
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+struct Address 
+{
+    std::string street;
+    std::string city;
+    std::string state;
+    std::string zipCode;
+};
+
+struct Person 
+{
+    std::string firstName;
+    std::string lastName;
+    Address address;           // Nested struct
+    std::vector<std::string> phoneNumbers;
+    
+    // Member function
+    std::string fullName() const 
+    {
+        return firstName + " " + lastName;
+    }
+    
+    void displayInfo() const 
+    {
+        std::cout << "Name: " << fullName() << '\n';
+        std::cout << "Address: " << address.street << ", " 
+                  << address.city << ", " << address.state << " " << address.zipCode << '\n';
+        std::cout << "Phone numbers: ";
+        for (const auto& phone : phoneNumbers) 
+        {
+            std::cout << phone << " ";
+        }
+        std::cout << '\n';
+    }
+};
+
+int main() 
+{
+    Person john {
+        .firstName = "John",
+        .lastName = "Doe", 
+        .address = {
+            .street = "123 Main St",
+            .city = "Springfield",
+            .state = "IL",
+            .zipCode = "62701"
+        },
+        .phoneNumbers = {"555-1234", "555-5678"}
+    };
+    
+    john.displayInfo();
+    
+    return 0;
+}
+```
+
+### Data Validation and Invariants
+
+```cpp
+#include <iostream>
+#include <string>
+#include <stdexcept>
+
+struct Temperature 
+{
+    enum class Scale { Celsius, Fahrenheit, Kelvin };
+    
+    double value{};
+    Scale scale = Scale::Celsius;
+    
+    // Validation function
+    bool isValid() const 
+    {
+        switch (scale) 
+        {
+            case Scale::Celsius:    return value >= -273.15;
+            case Scale::Fahrenheit: return value >= -459.67;
+            case Scale::Kelvin:     return value >= 0.0;
+        }
+        return false;
+    }
+    
+    // Conversion functions
+    Temperature toCelsius() const 
+    {
+        if (!isValid()) throw std::invalid_argument("Invalid temperature");
+        
+        switch (scale) 
+        {
+            case Scale::Celsius:    return *this;
+            case Scale::Fahrenheit: return {(value - 32) * 5.0/9.0, Scale::Celsius};
+            case Scale::Kelvin:     return {value - 273.15, Scale::Celsius};
+        }
+        return {};
+    }
+    
+    void display() const 
+    {
+        char symbol = (scale == Scale::Celsius) ? 'C' : 
+                     (scale == Scale::Fahrenheit) ? 'F' : 'K';
+        std::cout << value << "°" << symbol;
+    }
+};
+
+int main() 
+{
+    Temperature room{22.5, Temperature::Scale::Celsius};
+    Temperature freezing{32.0, Temperature::Scale::Fahrenheit};
+    
+    std::cout << "Room temperature: ";
+    room.display();
+    std::cout << '\n';
+    
+    std::cout << "Freezing point in Fahrenheit: ";
+    freezing.display();
+    std::cout << " = ";
+    freezing.toCelsius().display();
+    std::cout << '\n';
+    
+    return 0;
+}
+```
+
+---
+
+## Best Practices and Modern Usage
+
+### Do's ✅
+
+1. **Use enum class over plain enum**:
+```cpp
+enum class Status { ready, processing, complete };  // ✅ Type-safe
+```
+
+2. **Initialize struct members**:
+```cpp
+struct Point { double x{}, y{}, z{}; };  // ✅ Default values
+```
+
+3. **Use const references for function parameters**:
+```cpp
+void process(const LargeStruct& data) { /* ... */ }  // ✅ Efficient
+```
+
+4. **Group related data logically**:
+```cpp
+struct PlayerStats { int health, mana, experience; };  // ✅ Cohesive
+```
+
+### Don'ts ❌
+
+1. **Don't use magic numbers**:
+```cpp
+int gameState = 2;  // ❌ What is 2?
+```
+
+2. **Don't pass large structs by value**:
+```cpp
+void process(LargeStruct data) { /* ... */ }  // ❌ Expensive copy
+```
+
+3. **Don't compare different enum types**:
+```cpp
+if (color == fruit) { /* ... */ }  // ❌ Meaningless comparison
+```
+
+### Modern C++ Features
+
+```cpp
+// C++17: Structured bindings
+struct Point { double x, y; };
+Point p{3.0, 4.0};
+auto [x, y] = p;  // ✅ Decompose struct
+
+// C++20: Designated initializers
+Car tesla{.brand = "Tesla", .year = 2023};  // ✅ Clear intent
+
+// C++20: using enum
+using enum Color;
+if (paint == red) { /* ... */ }  // ✅ Less verbose
+```
+
+---
+
+## Real-World Applications
+
+### Game Development
+
+```cpp
+enum class EntityType { Player, Enemy, Projectile, Powerup };
+
+struct GameObject 
+{
+    EntityType type;
+    double x{}, y{};
+    double velocityX{}, velocityY{};
+    int health = 100;
+    bool isActive = true;
+    
+    void update(double deltaTime) 
+    {
+        x += velocityX * deltaTime;
+        y += velocityY * deltaTime;
+    }
+};
+```
+
+### Configuration Management
+
+```cpp
+struct ServerConfig 
+{
+    std::string host = "localhost";
+    int port = 8080;
+    int maxConnections = 100;
+    bool enableLogging = true;
+    double timeoutSeconds = 30.0;
+};
+```
+
+### Data Analysis
+
+```cpp
+struct DataPoint 
+{
+    double timestamp;
+    double value;
+    std::string category;
+    bool isValid = true;
+};
+
+struct Statistics 
+{
+    double mean{}, median{}, stdDev{};
+    double min{}, max{};
+    size_t count{};
+};
+```
+
+---
+
+## Conclusion
+
+Enumerations and structs are fundamental building blocks that enable:
+
+- **Type Safety** - Prevent meaningless operations and catch errors at compile time
+- **Code Organization** - Group related data and concepts together
+- **Self-Documenting Code** - Names convey meaning better than magic numbers
+- **Scalability** - Easy to extend and modify as requirements change
+- **Template Compatibility** - Work seamlessly with generic programming
+
+These user-defined types form the foundation for object-oriented programming (classes) and are essential for building robust, maintainable C++ applications. Next, we'll explore how structs evolve into full classes with encapsulation and member functions!
+
+**Next: Chapter 14-15 - Object-Oriented Programming (Classes and Encapsulation)**
+
+# Chapter 14: Introduction to Object-Oriented Programming - From Structs to Classes
+
+## Building from Structs: Creating Intelligent Objects
+
+In Chapter 13, we learned to bundle related data using structs. Now we'll transform these passive data containers into active, intelligent objects that can manage their own behavior. This is the foundation of **Object-Oriented Programming (OOP)**.
+
+---
+
+## 14.1 - Introduction to Object-Oriented Programming
+
+### The Evolution from Procedural to Object-Oriented
+
+Consider managing a bank account with traditional procedural programming:
+
+```cpp
+// Procedural approach - data and functions are separate
+struct BankAccount {
+    double balance;
+    std::string accountNumber;
+};
+
+// Functions operate on the data externally
+double getBalance(const BankAccount& account) {
+    return account.balance;
+}
+
+bool withdraw(BankAccount& account, double amount) {
+    if (amount <= account.balance) {
+        account.balance -= amount;
+        return true;
+    }
+    return false;
+}
+
+void deposit(BankAccount& account, double amount) {
+    account.balance += amount;
+}
+```
+
+**Problems with this approach:**
+- Data and related functions are scattered
+- No protection against invalid operations
+- Anyone can directly modify `balance`
+- Functions must be remembered and called correctly
+
+### Object-Oriented Solution
+
+```cpp
+#include <iostream>
+#include <string>
+
+class BankAccount {
+private:
+    double m_balance;
+    std::string m_accountNumber;
+
 public:
     // Constructor
-    explicit MovableResource(size_t size) 
-        : data_(std::make_unique<int[]>(size)), size_(size) {
-        std::cout << "Constructor: allocated " << size_ << " elements\n";
+    BankAccount(const std::string& accountNumber, double initialBalance = 0.0)
+        : m_accountNumber{accountNumber}, m_balance{initialBalance} {}
+    
+    // Member functions (methods) that operate on the object's data
+    double getBalance() const { return m_balance; }
+    
+    bool withdraw(double amount) {
+        if (amount > 0 && amount <= m_balance) {
+            m_balance -= amount;
+            return true;
+        }
+        return false;
+    }
+    
+    void deposit(double amount) {
+        if (amount > 0) {
+            m_balance += amount;
+        }
+    }
+    
+    void displayInfo() const {
+        std::cout << "Account: " << m_accountNumber 
+                  << ", Balance: $" << m_balance << '\n';
+    }
+};
+
+int main() {
+    BankAccount savings{"SAV-001", 1000.0};
+    
+    savings.displayInfo();           // Account: SAV-001, Balance: $1000
+    savings.deposit(250.0);          // Method call on the object
+    savings.withdraw(100.0);         // Object manages its own state
+    savings.displayInfo();           // Account: SAV-001, Balance: $1150
+    
+    // savings.m_balance = -500;     // ❌ Error: private member not accessible
+    
+    return 0;
+}
+```
+
+### Core OOP Principles
+
+1. **Encapsulation** - Bundle data and functions together, control access
+2. **Data Hiding** - Keep internal details private, expose only necessary interface
+3. **Abstraction** - Provide simple interface while hiding complexity
+4. **Inheritance** - Create new classes based on existing ones (Chapter 17-18)
+5. **Polymorphism** - Objects of different types respond to same interface (Chapter 18)
+
+---
+
+## 14.2 - Classes and Class Members
+
+### From struct to class
+
+In C++, `struct` and `class` are nearly identical - the only difference is default access:
+
+```cpp
+// struct: members are public by default
+struct Point2D {
+    double x, y;  // public by default
+    void display() { std::cout << "(" << x << ", " << y << ")\n"; }
+};
+
+// class: members are private by default  
+class Point3D {
+    double x, y, z;  // private by default
+    
+public:  // Must explicitly specify public
+    void setCoordinates(double newX, double newY, double newZ) {
+        x = newX; y = newY; z = newZ;
+    }
+    
+    void display() const {
+        std::cout << "(" << x << ", " << y << ", " << z << ")\n";
+    }
+};
+```
+
+### Class Member Types
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Student {
+private:
+    // Data members (member variables)
+    std::string m_name;
+    int m_id;
+    double m_gpa;
+    static int s_totalStudents;  // Static member - shared by all instances
+
+public:
+    // Member functions (methods)
+    Student(const std::string& name, int id, double gpa = 0.0);  // Constructor
+    ~Student();  // Destructor
+    
+    // Accessor functions (getters)
+    const std::string& getName() const { return m_name; }
+    int getId() const { return m_id; }
+    double getGpa() const { return m_gpa; }
+    
+    // Mutator functions (setters)
+    void setName(const std::string& name) { m_name = name; }
+    void setGpa(double gpa) { 
+        if (gpa >= 0.0 && gpa <= 4.0) {
+            m_gpa = gpa; 
+        }
+    }
+    
+    // Utility functions
+    void displayInfo() const;
+    bool isHonorStudent() const { return m_gpa >= 3.5; }
+    
+    // Static member function
+    static int getTotalStudents() { return s_totalStudents; }
+};
+
+// Static member definition (outside class)
+int Student::s_totalStudents = 0;
+
+// Constructor implementation
+Student::Student(const std::string& name, int id, double gpa)
+    : m_name{name}, m_id{id}, m_gpa{gpa} {
+    ++s_totalStudents;
+    std::cout << "Student " << m_name << " created\n";
+}
+
+// Destructor implementation  
+Student::~Student() {
+    --s_totalStudents;
+    std::cout << "Student " << m_name << " destroyed\n";
+}
+
+// Member function implementation
+void Student::displayInfo() const {
+    std::cout << "Name: " << m_name << ", ID: " << m_id 
+              << ", GPA: " << m_gpa << '\n';
+}
+
+int main() {
+    std::cout << "Total students: " << Student::getTotalStudents() << '\n';
+    
+    Student alice{"Alice Johnson", 12345, 3.85};
+    Student bob{"Bob Smith", 54321, 2.95};
+    
+    std::cout << "Total students: " << Student::getTotalStudents() << '\n';
+    
+    alice.displayInfo();
+    std::cout << alice.getName() << " is " 
+              << (alice.isHonorStudent() ? "" : "not ") 
+              << "an honor student\n";
+    
+    return 0;
+}
+```
+
+---
+
+## 14.3 - Public vs Private Access Specifiers
+
+### Access Control in Action
+
+```cpp
+#include <iostream>
+#include <string>
+
+class SecureVault {
+private:
+    std::string m_contents;
+    std::string m_passcode;
+    bool m_isLocked;
+    int m_failedAttempts;
+    static constexpr int MAX_ATTEMPTS = 3;
+
+public:
+    SecureVault(const std::string& passcode) 
+        : m_passcode{passcode}, m_isLocked{true}, m_failedAttempts{0} {}
+    
+    bool unlock(const std::string& attempt) {
+        if (m_failedAttempts >= MAX_ATTEMPTS) {
+            std::cout << "Vault permanently locked due to too many failed attempts!\n";
+            return false;
+        }
         
-        // Initialize with some values
-        for (size_t i = 0; i < size_; ++i) {
-            data_[i] = static_cast<int>(i);
+        if (attempt == m_passcode) {
+            m_isLocked = false;
+            m_failedAttempts = 0;  // Reset on successful unlock
+            std::cout << "Vault unlocked!\n";
+            return true;
+        } else {
+            ++m_failedAttempts;
+            std::cout << "Wrong passcode! Attempts remaining: " 
+                      << (MAX_ATTEMPTS - m_failedAttempts) << '\n';
+            return false;
         }
     }
     
-    // Copy constructor (expensive)
-    MovableResource(const MovableResource& other) 
-        : data_(std::make_unique<int[]>(other.size_)), size_(other.size_) {
-        std::cout << "Copy constructor: copying " << size_ << " elements\n";
-        std::copy(other.data_.get(), other.data_.get() + size_, data_.get());
+    void lock() {
+        m_isLocked = true;
+        std::cout << "Vault locked\n";
     }
     
-    // Move constructor (cheap)
-    MovableResource(MovableResource&& other) noexcept 
-        : data_(std::move(other.data_)), size_(other.size_) {
-        std::cout << "Move constructor: transferred " << size_ << " elements\n";
-        other.size_ = 0;  // Reset moved-from object
-    }
-    
-    // Copy assignment operator
-    MovableResource& operator=(const MovableResource& other) {
-        if (this != &other) {
-            std::cout << "Copy assignment: copying " << other.size_ << " elements\n";
-            data_ = std::make_unique<int[]>(other.size_);
-            size_ = other.size_;
-            std::copy(other.data_.get(), other.data_.get() + size_, data_.get());
+    bool storeItem(const std::string& item) {
+        if (m_isLocked) {
+            std::cout << "Cannot store item: vault is locked\n";
+            return false;
         }
-        return *this;
+        m_contents = item;
+        std::cout << "Item stored successfully\n";
+        return true;
     }
     
-    // Move assignment operator
-    MovableResource& operator=(MovableResource&& other) noexcept {
-        if (this != &other) {
-            std::cout << "Move assignment: transferred " << other.size_ << " elements\n";
-            data_ = std::move(other.data_);
-            size_ = other.size_;
-            other.size_ = 0;
+    std::string retrieveContents() {
+        if (m_isLocked) {
+            std::cout << "Cannot retrieve: vault is locked\n";
+            return "";
         }
-        return *this;
+        return m_contents;
     }
     
-    size_t size() const { return size_; }
-    int& operator[](size_t index) { return data_[index]; }
-    const int& operator[](size_t index) const { return data_[index]; }
+    bool isLocked() const { return m_isLocked; }
 };
 
-void demonstrateMoveSemantics() {
-    std::vector<MovableResource> resources;
+int main() {
+    SecureVault myVault{"secret123"};
     
-    // Move construction
-    resources.push_back(MovableResource(1000));  // Temporary object moved
+    // myVault.m_passcode = "hacked";  // ❌ Error: private member
     
-    MovableResource large(2000);
-    resources.push_back(std::move(large));       // Explicit move
+    myVault.storeItem("Gold coins");     // Cannot store: vault is locked
     
-    // Move in algorithms
-    std::vector<MovableResource> moved_resources;
-    moved_resources.reserve(resources.size());
+    myVault.unlock("wrong");             // Wrong passcode! Attempts remaining: 2
+    myVault.unlock("alsowrong");         // Wrong passcode! Attempts remaining: 1
+    myVault.unlock("secret123");         // Vault unlocked!
     
-    std::move(resources.begin(), resources.end(), 
-              std::back_inserter(moved_resources));
+    myVault.storeItem("Gold coins");     // Item stored successfully
+    std::cout << "Retrieved: " << myVault.retrieveContents() << '\n';
+    
+    myVault.lock();
+    
+    return 0;
 }
 ```
 
-### Perfect Forwarding with std::forward
+### Benefits of Encapsulation
+
+1. **Data Integrity** - Invalid states prevented by controlled access
+2. **Security** - Sensitive data hidden from outside access
+3. **Maintainability** - Internal implementation can change without affecting users
+4. **Debugging** - Easier to track down issues when data access is controlled
+
+---
+
+## 14.4 - Access Functions and Encapsulation
+
+### Well-Designed Accessor Pattern
 
 ```cpp
 #include <iostream>
-#include <memory>
-#include <utility>
+#include <string>
+#include <stdexcept>
 
-class Widget {
-public:
-    Widget() { std::cout << "Widget default constructor\n"; }
-    Widget(const Widget&) { std::cout << "Widget copy constructor\n"; }
-    Widget(Widget&&) noexcept { std::cout << "Widget move constructor\n"; }
+class Temperature {
+private:
+    double m_celsius;
     
-    explicit Widget(int value) { 
-        std::cout << "Widget constructor with value: " << value << "\n"; 
+    // Private helper functions
+    bool isValidCelsius(double temp) const {
+        return temp >= -273.15;  // Absolute zero
+    }
+
+public:
+    // Constructor with validation
+    Temperature(double celsius = 0.0) {
+        if (!isValidCelsius(celsius)) {
+            throw std::invalid_argument("Temperature cannot be below absolute zero");
+        }
+        m_celsius = celsius;
     }
     
-    Widget(const std::string& name, int value) {
-        std::cout << "Widget constructor: " << name << ", " << value << "\n";
+    // Read-only accessors (getters)
+    double celsius() const { return m_celsius; }
+    double fahrenheit() const { return (m_celsius * 9.0/5.0) + 32.0; }
+    double kelvin() const { return m_celsius + 273.15; }
+    
+    // Mutator with validation (setter)
+    void setCelsius(double temp) {
+        if (!isValidCelsius(temp)) {
+            throw std::invalid_argument("Invalid temperature");
+        }
+        m_celsius = temp;
+    }
+    
+    void setFahrenheit(double temp) {
+        double celsiusEquivalent = (temp - 32.0) * 5.0/9.0;
+        setCelsius(celsiusEquivalent);  // Reuse validation
+    }
+    
+    void setKelvin(double temp) {
+        setCelsius(temp - 273.15);  // Reuse validation
+    }
+    
+    // Utility functions
+    bool isFreezing() const { return m_celsius <= 0.0; }
+    bool isBoiling() const { return m_celsius >= 100.0; }
+    
+    std::string getState() const {
+        if (m_celsius < 0.0) return "Solid (Ice)";
+        if (m_celsius < 100.0) return "Liquid (Water)";
+        return "Gas (Steam)";
+    }
+    
+    void display() const {
+        std::cout << "Temperature: " << m_celsius << "°C (" 
+                  << fahrenheit() << "°F, " << kelvin() << "K)\n"
+                  << "State: " << getState() << '\n';
     }
 };
 
-// Factory function with perfect forwarding
-template<typename T, typename... Args>
-std::unique_ptr<T> make_unique_perfect(Args&&... args) {
-    return std::make_unique<T>(std::forward<Args>(args)...);
+int main() {
+    try {
+        Temperature room{22.5};
+        room.display();
+        
+        Temperature hot;
+        hot.setFahrenheit(212.0);  // Boiling point
+        hot.display();
+        
+        // Temperature invalid{-300.0};  // ❌ Throws exception
+        
+        room.setCelsius(0.0);
+        std::cout << "Is freezing: " << (room.isFreezing() ? "Yes" : "No") << '\n';
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << '\n';
+    }
+    
+    return 0;
+}
+```
+
+### Member Functions vs Free Functions
+
+```cpp
+#include <iostream>
+#include <cmath>
+
+class Circle {
+private:
+    double m_radius;
+
+public:
+    Circle(double radius) : m_radius{radius} {
+        if (radius <= 0) {
+            throw std::invalid_argument("Radius must be positive");
+        }
+    }
+    
+    // Accessor
+    double radius() const { return m_radius; }
+    
+    // Mutator  
+    void setRadius(double radius) {
+        if (radius <= 0) {
+            throw std::invalid_argument("Radius must be positive");
+        }
+        m_radius = radius;
+    }
+    
+    // Member functions - operate on this object's data
+    double area() const { return 3.14159 * m_radius * m_radius; }
+    double circumference() const { return 2 * 3.14159 * m_radius; }
+    
+    void scale(double factor) {
+        if (factor <= 0) return;
+        m_radius *= factor;
+    }
+    
+    void display() const {
+        std::cout << "Circle with radius " << m_radius 
+                  << " (area: " << area() << ")\n";
+    }
+};
+
+// Free functions - don't need access to private members
+bool areEqual(const Circle& c1, const Circle& c2) {
+    return std::abs(c1.radius() - c2.radius()) < 0.001;
 }
 
-// Wrapper that forwards arguments perfectly
-template<typename F, typename... Args>
-decltype(auto) call_with_timing(F&& func, Args&&... args) {
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    // Perfect forwarding preserves value categories
-    decltype(auto) result = std::forward<F>(func)(std::forward<Args>(args)...);
-    
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-    std::cout << "Function took " << duration.count() << " microseconds\n";
-    
-    return result;
+Circle createUnitCircle() {
+    return Circle{1.0};
 }
 
-void demonstratePerfectForwarding() {
-    // Perfect forwarding in factory functions
-    auto widget1 = make_unique_perfect<Widget>();                    // Default construction
-    auto widget2 = make_unique_perfect<Widget>(42);                  // Value construction
-    auto widget3 = make_unique_perfect<Widget>("Test", 100);         // Multi-argument
+double distanceBetweenCenters(const Circle& c1, const Circle& c2) {
+    // This would need coordinate data if we had it
+    return 0.0;  // Simplified example
+}
+
+int main() {
+    Circle small{2.0};
+    Circle large{5.0};
     
-    // Perfect forwarding with function wrappers
-    Widget w;
-    auto result = call_with_timing([](const Widget& w) { return w; }, w);         // lvalue
-    auto result2 = call_with_timing([](Widget w) { return w; }, std::move(w));    // rvalue
+    small.display();
+    large.display();
+    
+    small.scale(2.0);  // Member function modifies the object
+    std::cout << "After scaling: ";
+    small.display();
+    
+    std::cout << "Circles equal: " << (areEqual(small, large) ? "Yes" : "No") << '\n';
+    
+    Circle unit = createUnitCircle();  // Free function creates object
+    unit.display();
+    
+    return 0;
 }
 ```
 
 ---
 
-## 25.1 - Lambda Expressions and Functional Programming
+## 14.5 - Constructors
 
-### Basic Lambda Syntax
-
-```cpp
-#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <functional>
-
-void basicLambdas() {
-    // Basic lambda syntax: [capture](parameters) -> return_type { body }
-    
-    // Simple lambda
-    auto greet = []() {
-        std::cout << "Hello, World!\n";
-    };
-    greet();
-    
-    // Lambda with parameters
-    auto add = [](int a, int b) {
-        return a + b;
-    };
-    std::cout << "3 + 4 = " << add(3, 4) << "\n";
-    
-    // Lambda with explicit return type
-    auto divide = [](double a, double b) -> double {
-        if (b != 0.0) {
-            return a / b;
-        }
-        throw std::invalid_argument("Division by zero");
-    };
-    
-    // Generic lambda (C++14)
-    auto generic_add = [](auto a, auto b) {
-        return a + b;
-    };
-    
-    std::cout << generic_add(1, 2) << "\n";      // int + int
-    std::cout << generic_add(1.5, 2.5) << "\n"; // double + double
-    std::cout << generic_add(std::string("Hello"), std::string(" World")) << "\n"; // string + string
-}
-```
-
-### Capture Mechanisms
+### Default Constructor vs Parameterized Constructor
 
 ```cpp
-#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <memory>
-
-void demonstrateCaptures() {
-    int x = 10;
-    int y = 20;
-    
-    // Capture by value
-    auto lambda1 = [x, y](int z) {
-        return x + y + z;  // x and y are copied
-    };
-    
-    // Capture by reference
-    auto lambda2 = [&x, &y](int z) {
-        x += z;  // Modifies original x
-        return x + y;
-    };
-    
-    // Capture all by value
-    auto lambda3 = [=](int z) {
-        return x + y + z;  // All variables copied
-    };
-    
-    // Capture all by reference
-    auto lambda4 = [&](int z) {
-        x += z;  // All variables by reference
-        return x + y;
-    };
-    
-    // Mixed capture
-    auto lambda5 = [=, &x](int z) {
-        x += z;      // x by reference
-        return x + y + z;  // y by value
-    };
-    
-    // Init capture (C++14)
-    auto lambda6 = [captured_value = x * 2](int z) {
-        return captured_value + z;
-    };
-    
-    // Move capture
-    auto resource = std::make_unique<int>(42);
-    auto lambda7 = [moved_resource = std::move(resource)](int multiplier) {
-        return *moved_resource * multiplier;
-    };
-    
-    std::cout << lambda1(5) << "\n";  // 35
-    std::cout << lambda6(8) << "\n";  // 28 (x*2 + 8)
-    std::cout << lambda7(3) << "\n";  // 126 (42 * 3)
-}
-```
-
-### Lambdas with STL Algorithms
-
-```cpp
-#include <vector>
-#include <algorithm>
-#include <numeric>
 #include <iostream>
 #include <string>
-#include <map>
 
-struct Product {
-    std::string name;
-    double price;
-    int quantity;
+class Player {
+private:
+    std::string m_name;
+    int m_health;
+    int m_level;
+    double m_experience;
+
+public:
+    // Default constructor
+    Player() {
+        m_name = "Unknown";
+        m_health = 100;
+        m_level = 1;
+        m_experience = 0.0;
+        std::cout << "Default player created\n";
+    }
     
-    double totalValue() const { return price * quantity; }
+    // Parameterized constructor
+    Player(const std::string& name, int health = 100) {
+        m_name = name;
+        m_health = health;
+        m_level = 1;
+        m_experience = 0.0;
+        std::cout << "Player " << m_name << " created\n";
+    }
+    
+    // Another parameterized constructor
+    Player(const std::string& name, int health, int level, double exp) {
+        m_name = name;
+        m_health = health;
+        m_level = level;
+        m_experience = exp;
+        std::cout << "Experienced player " << m_name << " created\n";
+    }
+    
+    void displayStats() const {
+        std::cout << "Player: " << m_name << " (Level " << m_level 
+                  << ", Health: " << m_health << ", XP: " << m_experience << ")\n";
+    }
 };
 
-void lambdasWithSTL() {
-    std::vector<Product> inventory = {
-        {"Laptop", 999.99, 10},
-        {"Mouse", 25.50, 50},
-        {"Keyboard", 75.00, 30},
-        {"Monitor", 299.99, 15},
-        {"Speaker", 150.00, 25}
+int main() {
+    Player newbie;                              // Default constructor
+    Player hero{"Link", 120};                   // Parameterized constructor  
+    Player veteran{"Zelda", 150, 10, 9999.0};  // Full parameterized constructor
+    
+    newbie.displayStats();
+    hero.displayStats();
+    veteran.displayStats();
+    
+    return 0;
+}
+```
+
+### Member Initializer Lists (Preferred Method)
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Book {
+private:
+    const std::string m_title;      // const member - must be initialized
+    const std::string m_author;     // const member - must be initialized  
+    int m_pages;
+    double m_price;
+
+public:
+    // ❌ This won't compile - can't assign to const members in constructor body
+    /*
+    Book(const std::string& title, const std::string& author, int pages, double price) {
+        m_title = title;    // Error: const member
+        m_author = author;  // Error: const member
+        m_pages = pages;
+        m_price = price;
+    }
+    */
+    
+    // ✅ Member initializer list - preferred method
+    Book(const std::string& title, const std::string& author, int pages = 0, double price = 0.0)
+        : m_title{title}, m_author{author}, m_pages{pages}, m_price{price} {
+        // Constructor body can contain additional logic
+        std::cout << "Book \"" << m_title << "\" by " << m_author << " created\n";
+    }
+    
+    // Accessors
+    const std::string& title() const { return m_title; }
+    const std::string& author() const { return m_author; }
+    int pages() const { return m_pages; }
+    double price() const { return m_price; }
+    
+    // Mutators (only for non-const members)
+    void setPages(int pages) { 
+        if (pages >= 0) m_pages = pages; 
+    }
+    void setPrice(double price) { 
+        if (price >= 0.0) m_price = price; 
+    }
+    
+    void displayInfo() const {
+        std::cout << "\"" << m_title << "\" by " << m_author 
+                  << " (" << m_pages << " pages, $" << m_price << ")\n";
+    }
+};
+
+int main() {
+    Book novel{"The Great Gatsby", "F. Scott Fitzgerald", 180, 12.99};
+    Book reference{"C++ Reference", "Unknown Author"};  // Uses defaults
+    
+    novel.displayInfo();
+    reference.displayInfo();
+    
+    reference.setPages(500);
+    reference.setPrice(49.99);
+    reference.displayInfo();
+    
+    return 0;
+}
+```
+
+### Constructor Delegation (C++11)
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Rectangle {
+private:
+    double m_width;
+    double m_height;
+
+public:
+    // Primary constructor
+    Rectangle(double width, double height) : m_width{width}, m_height{height} {
+        if (width <= 0 || height <= 0) {
+            throw std::invalid_argument("Dimensions must be positive");
+        }
+        std::cout << "Rectangle created: " << m_width << "x" << m_height << '\n';
+    }
+    
+    // Delegating constructors - call the primary constructor
+    Rectangle() : Rectangle(1.0, 1.0) {  // Default to unit square
+        std::cout << "Default rectangle created\n";
+    }
+    
+    Rectangle(double side) : Rectangle(side, side) {  // Square constructor
+        std::cout << "Square created\n";
+    }
+    
+    double area() const { return m_width * m_height; }
+    double perimeter() const { return 2 * (m_width + m_height); }
+    
+    void display() const {
+        std::cout << "Rectangle: " << m_width << "x" << m_height 
+                  << " (area: " << area() << ")\n";
+    }
+};
+
+int main() {
+    try {
+        Rectangle unit;           // Default constructor -> delegates to Rectangle(1.0, 1.0)
+        Rectangle square{5.0};    // Square constructor -> delegates to Rectangle(5.0, 5.0)
+        Rectangle rect{3.0, 4.0}; // Direct constructor call
+        
+        unit.display();
+        square.display();
+        rect.display();
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << '\n';
+    }
+    
+    return 0;
+}
+```
+
+---
+
+## 14.6 - Destructors
+
+### Automatic Resource Management
+
+```cpp
+#include <iostream>
+#include <string>
+
+class FileHandler {
+private:
+    std::string m_filename;
+    bool m_isOpen;
+
+public:
+    // Constructor
+    FileHandler(const std::string& filename) : m_filename{filename}, m_isOpen{false} {
+        std::cout << "FileHandler created for: " << m_filename << '\n';
+        // In real implementation, would open file here
+        m_isOpen = true;
+        std::cout << "File opened: " << m_filename << '\n';
+    }
+    
+    // Destructor - called automatically when object goes out of scope
+    ~FileHandler() {
+        std::cout << "FileHandler destructor called for: " << m_filename << '\n';
+        if (m_isOpen) {
+            // In real implementation, would close file here
+            std::cout << "File closed: " << m_filename << '\n';
+            m_isOpen = false;
+        }
+        std::cout << "FileHandler destroyed\n";
+    }
+    
+    void writeData(const std::string& data) {
+        if (m_isOpen) {
+            std::cout << "Writing to " << m_filename << ": " << data << '\n';
+        }
+    }
+    
+    bool isOpen() const { return m_isOpen; }
+};
+
+void processFiles() {
+    std::cout << "=== Entering processFiles() ===\n";
+    
+    FileHandler config{"config.txt"};      // Constructor called
+    FileHandler log{"application.log"};    // Constructor called
+    
+    config.writeData("server_port=8080");
+    log.writeData("Application started");
+    
+    std::cout << "=== Leaving processFiles() ===\n";
+    // Destructors called automatically as objects go out of scope
+    // Order: log destroyed first (LIFO), then config
+}
+
+int main() {
+    std::cout << "=== Main function start ===\n";
+    
+    processFiles();  // Objects created and destroyed within this function
+    
+    std::cout << "=== Back in main ===\n";
+    
+    {
+        std::cout << "--- Entering block scope ---\n";
+        FileHandler temp{"temp.dat"};
+        temp.writeData("temporary data");
+        std::cout << "--- Leaving block scope ---\n";
+        // temp destructor called here
+    }
+    
+    std::cout << "=== Main function end ===\n";
+    
+    return 0;
+}
+```
+
+### RAII (Resource Acquisition Is Initialization)
+
+```cpp
+#include <iostream>
+#include <memory>
+
+class DatabaseConnection {
+private:
+    std::string m_connectionString;
+    bool m_connected;
+
+public:
+    DatabaseConnection(const std::string& connStr) 
+        : m_connectionString{connStr}, m_connected{false} {
+        // Acquire resource in constructor
+        std::cout << "Connecting to database: " << m_connectionString << '\n';
+        m_connected = true;
+        std::cout << "Database connection established\n";
+    }
+    
+    ~DatabaseConnection() {
+        // Release resource in destructor
+        if (m_connected) {
+            std::cout << "Closing database connection: " << m_connectionString << '\n';
+            m_connected = false;
+        }
+    }
+    
+    // Delete copy constructor and copy assignment to prevent copying
+    DatabaseConnection(const DatabaseConnection&) = delete;
+    DatabaseConnection& operator=(const DatabaseConnection&) = delete;
+    
+    void executeQuery(const std::string& query) {
+        if (m_connected) {
+            std::cout << "Executing query: " << query << '\n';
+        } else {
+            std::cout << "Error: Not connected to database\n";
+        }
+    }
+    
+    bool isConnected() const { return m_connected; }
+};
+
+class DataProcessor {
+private:
+    DatabaseConnection m_dbConn;
+
+public:
+    DataProcessor(const std::string& dbConnStr) : m_dbConn{dbConnStr} {
+        std::cout << "DataProcessor initialized\n";
+    }
+    
+    ~DataProcessor() {
+        std::cout << "DataProcessor shutting down\n";
+        // m_dbConn destructor called automatically
+    }
+    
+    void processUserData(int userId) {
+        m_dbConn.executeQuery("SELECT * FROM users WHERE id = " + std::to_string(userId));
+        // Process data...
+        m_dbConn.executeQuery("UPDATE users SET last_access = NOW() WHERE id = " + std::to_string(userId));
+    }
+};
+
+int main() {
+    std::cout << "=== Application Start ===\n";
+    
+    try {
+        DataProcessor processor{"postgresql://localhost:5432/mydb"};
+        processor.processUserData(12345);
+        
+        std::cout << "=== Processing Complete ===\n";
+        
+        // When processor goes out of scope:
+        // 1. DataProcessor destructor called
+        // 2. DatabaseConnection destructor called automatically
+        // 3. All resources properly cleaned up
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << '\n';
+    }
+    
+    std::cout << "=== Application End ===\n";
+    
+    return 0;
+}
+```
+
+---
+
+## 14.7 - The Hidden "this" Pointer
+
+### Understanding Object Identity
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Counter {
+private:
+    int m_value;
+    std::string m_name;
+
+public:
+    Counter(const std::string& name, int initial = 0) 
+        : m_name{name}, m_value{initial} {}
+    
+    // Method that doesn't use 'this' explicitly
+    void increment() {
+        ++m_value;  // Equivalent to: ++(this->m_value);
+        std::cout << m_name << " incremented to " << m_value << '\n';
+    }
+    
+    // Method that explicitly uses 'this'
+    Counter& add(int amount) {
+        this->m_value += amount;  // Explicit use of 'this'
+        return *this;             // Return reference to current object
+    }
+    
+    // Method chaining using 'this'
+    Counter& multiply(int factor) {
+        m_value *= factor;
+        return *this;  // Enable chaining: counter.multiply(2).add(5)
+    }
+    
+    // Compare with another Counter
+    bool isGreaterThan(const Counter& other) const {
+        return this->m_value > other.m_value;
+        // Could also write: return m_value > other.m_value;
+    }
+    
+    // Self-assignment check (useful in copy assignment operator)
+    Counter& copyFrom(const Counter& other) {
+        if (this == &other) {  // Check for self-assignment
+            std::cout << "Self-assignment detected, no operation performed\n";
+            return *this;
+        }
+        
+        this->m_value = other.m_value;
+        std::cout << m_name << " copied value from " << other.m_name << '\n';
+        return *this;
+    }
+    
+    int getValue() const { return m_value; }
+    const std::string& getName() const { return m_name; }
+    
+    void display() const {
+        std::cout << m_name << ": " << m_value << " (object at " << this << ")\n";
+    }
+};
+
+int main() {
+    Counter alpha{"Alpha", 10};
+    Counter beta{"Beta", 5};
+    
+    std::cout << "Initial state:\n";
+    alpha.display();  // Shows object address
+    beta.display();   // Different object address
+    
+    // Method chaining using returned *this
+    alpha.add(5).multiply(2).add(3);  // 10 + 5 = 15, 15 * 2 = 30, 30 + 3 = 33
+    std::cout << "After chaining: " << alpha.getValue() << '\n';
+    
+    // Comparison using 'this'
+    if (alpha.isGreaterThan(beta)) {
+        std::cout << alpha.getName() << " is greater than " << beta.getName() << '\n';
+    }
+    
+    // Self-assignment
+    alpha.copyFrom(alpha);  // Detects self-assignment
+    
+    // Copy from other
+    beta.copyFrom(alpha);
+    
+    alpha.display();
+    beta.display();
+    
+    return 0;
+}
+```
+
+### When to Use 'this' Explicitly
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Person {
+private:
+    std::string m_name;
+    int m_age;
+
+public:
+    Person(const std::string& name, int age) : m_name{name}, m_age{age} {}
+    
+    // Case 1: Parameter name conflicts with member name
+    void setName(const std::string& name) {
+        this->m_name = name;  // 'this->' needed to distinguish from parameter
+        // Without 'this->': name = name; would assign parameter to itself!
+    }
+    
+    void setAge(int age) {
+        this->m_age = age;    // 'this->' needed to distinguish from parameter
+    }
+    
+    // Case 2: Method chaining
+    Person& changeName(const std::string& name) {
+        m_name = name;        // 'this->' not needed here (no naming conflict)
+        return *this;         // 'this' needed to return current object
+    }
+    
+    Person& changeAge(int age) {
+        this->m_age = age;    // 'this->' used for consistency
+        return *this;
+    }
+    
+    // Case 3: Self-comparison or operations
+    bool isSamePersonAs(const Person& other) const {
+        return this == &other;  // Comparing object addresses
+    }
+    
+    bool isOlderThan(const Person& other) const {
+        return m_age > other.m_age;  // 'this->' not needed - no ambiguity
+        // Could write: return this->m_age > other.m_age;
+    }
+    
+    void display() const {
+        std::cout << "Name: " << m_name << ", Age: " << m_age << '\n';
+    }
+};
+
+int main() {
+    Person john{"John", 25};
+    Person jane{"Jane", 30};
+    
+    john.display();
+    
+    // Method chaining
+    john.changeName("Johnny").changeAge(26);
+    john.display();
+    
+    // Self-comparison
+    std::cout << "john same as john: " << (john.isSamePersonAs(john) ? "Yes" : "No") << '\n';
+    std::cout << "john same as jane: " << (john.isSamePersonAs(jane) ? "Yes" : "No") << '\n';
+    
+    return 0;
+}
+```
+
+---
+
+## 14.8 - Class Code and Header Files
+
+### Separating Interface from Implementation
+
+**Rectangle.h** (Header file - Interface)
+```cpp
+#ifndef RECTANGLE_H
+#define RECTANGLE_H
+
+#include <iostream>
+
+class Rectangle {
+private:
+    double m_width;
+    double m_height;
+
+public:
+    // Constructor declarations
+    Rectangle(double width, double height);
+    Rectangle();  // Default constructor
+    
+    // Accessor declarations
+    double getWidth() const;
+    double getHeight() const;
+    double area() const;
+    double perimeter() const;
+    
+    // Mutator declarations
+    void setWidth(double width);
+    void setHeight(double height);
+    void scale(double factor);
+    
+    // Utility function declarations
+    void display() const;
+    bool isSquare() const;
+};
+
+#endif
+```
+
+**Rectangle.cpp** (Implementation file)
+```cpp
+#include "Rectangle.h"
+#include <stdexcept>
+
+// Constructor definitions
+Rectangle::Rectangle(double width, double height) : m_width{width}, m_height{height} {
+    if (width <= 0 || height <= 0) {
+        throw std::invalid_argument("Dimensions must be positive");
+    }
+}
+
+Rectangle::Rectangle() : Rectangle(1.0, 1.0) {
+    // Delegates to parameterized constructor
+}
+
+// Accessor definitions
+double Rectangle::getWidth() const {
+    return m_width;
+}
+
+double Rectangle::getHeight() const {
+    return m_height;
+}
+
+double Rectangle::area() const {
+    return m_width * m_height;
+}
+
+double Rectangle::perimeter() const {
+    return 2.0 * (m_width + m_height);
+}
+
+// Mutator definitions
+void Rectangle::setWidth(double width) {
+    if (width <= 0) {
+        throw std::invalid_argument("Width must be positive");
+    }
+    m_width = width;
+}
+
+void Rectangle::setHeight(double height) {
+    if (height <= 0) {
+        throw std::invalid_argument("Height must be positive");
+    }
+    m_height = height;
+}
+
+void Rectangle::scale(double factor) {
+    if (factor <= 0) {
+        throw std::invalid_argument("Scale factor must be positive");
+    }
+    m_width *= factor;
+    m_height *= factor;
+}
+
+// Utility function definitions
+void Rectangle::display() const {
+    std::cout << "Rectangle: " << m_width << "x" << m_height 
+              << " (area: " << area() << ", perimeter: " << perimeter() << ")\n";
+}
+
+bool Rectangle::isSquare() const {
+    const double EPSILON = 0.0001;
+    return std::abs(m_width - m_height) < EPSILON;
+}
+```
+
+**main.cpp** (Using the class)
+```cpp
+#include "Rectangle.h"
+#include <iostream>
+#include <stdexcept>
+
+int main() {
+    try {
+        Rectangle rect1{5.0, 3.0};
+        Rectangle rect2;  // Default constructor
+        
+        rect1.display();
+        rect2.display();
+        
+        rect1.scale(1.5);
+        rect1.display();
+        
+        rect2.setWidth(4.0);
+        rect2.setHeight(4.0);
+        
+        std::cout << "rect2 is square: " << (rect2.isSquare() ? "Yes" : "No") << '\n';
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << '\n';
+    }
+    
+    return 0;
+}
+```
+
+### Inline Functions in Headers
+
+```cpp
+// Timer.h
+#ifndef TIMER_H
+#define TIMER_H
+
+#include <chrono>
+#include <iostream>
+
+class Timer {
+private:
+    std::chrono::steady_clock::time_point m_startTime;
+    bool m_running;
+
+public:
+    Timer() : m_running{false} {}
+    
+    // Simple functions can be defined inline in header
+    void start() {
+        m_startTime = std::chrono::steady_clock::now();
+        m_running = true;
+    }
+    
+    void stop() {
+        m_running = false;
+    }
+    
+    bool isRunning() const { return m_running; }
+    
+    // More complex function - declare here, define in .cpp
+    double getElapsedSeconds() const;
+    void displayElapsed() const;
+};
+
+// Inline function definition (alternative to defining in class body)
+inline void Timer::displayElapsed() const {
+    std::cout << "Elapsed time: " << getElapsedSeconds() << " seconds\n";
+}
+
+#endif
+```
+
+**Timer.cpp**
+```cpp
+#include "Timer.h"
+
+double Timer::getElapsedSeconds() const {
+    if (!m_running) {
+        return 0.0;
+    }
+    
+    auto currentTime = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        currentTime - m_startTime);
+    
+    return elapsed.count() / 1000.0;
+}
+```
+
+---
+
+## Real-World Applications
+
+### Game Entity System
+
+```cpp
+// GameEntity.h
+#ifndef GAME_ENTITY_H
+#define GAME_ENTITY_H
+
+#include <string>
+
+class GameEntity {
+private:
+    static int s_nextId;
+    
+    int m_id;
+    std::string m_name;
+    double m_x, m_y;
+    int m_health;
+    int m_maxHealth;
+    bool m_isActive;
+
+public:
+    // Constructors
+    GameEntity(const std::string& name, double x = 0.0, double y = 0.0, int maxHealth = 100);
+    ~GameEntity();
+    
+    // Accessors
+    int getId() const { return m_id; }
+    const std::string& getName() const { return m_name; }
+    double getX() const { return m_x; }
+    double getY() const { return m_y; }
+    int getHealth() const { return m_health; }
+    int getMaxHealth() const { return m_maxHealth; }
+    bool isActive() const { return m_isActive; }
+    bool isAlive() const { return m_health > 0; }
+    
+    // Mutators
+    void setPosition(double x, double y);
+    void move(double deltaX, double deltaY);
+    void takeDamage(int damage);
+    void heal(int amount);
+    void setActive(bool active) { m_isActive = active; }
+    
+    // Utility functions
+    double distanceTo(const GameEntity& other) const;
+    void displayStatus() const;
+    
+    // Static function
+    static int getTotalEntities() { return s_nextId - 1; }
+};
+
+#endif
+```
+
+### Bank Account with Transaction History
+
+```cpp
+// BankAccount.h
+#ifndef BANK_ACCOUNT_H
+#define BANK_ACCOUNT_H
+
+#include <string>
+#include <vector>
+
+struct Transaction {
+    enum Type { Deposit, Withdrawal, Transfer };
+    Type type;
+    double amount;
+    std::string description;
+    std::string timestamp;
+};
+
+class BankAccount {
+private:
+    std::string m_accountNumber;
+    std::string m_ownerName;
+    double m_balance;
+    std::vector<Transaction> m_transactions;
+    static double s_interestRate;
+
+public:
+    BankAccount(const std::string& accountNumber, const std::string& ownerName, 
+                double initialDeposit = 0.0);
+    
+    // Account operations
+    bool deposit(double amount, const std::string& description = "Deposit");
+    bool withdraw(double amount, const std::string& description = "Withdrawal");
+    bool transferTo(BankAccount& recipient, double amount, 
+                   const std::string& description = "Transfer");
+    
+    // Interest calculation
+    void applyInterest();
+    static void setInterestRate(double rate) { s_interestRate = rate; }
+    static double getInterestRate() { return s_interestRate; }
+    
+    // Account information
+    double getBalance() const { return m_balance; }
+    const std::string& getAccountNumber() const { return m_accountNumber; }
+    const std::string& getOwnerName() const { return m_ownerName; }
+    
+    // Transaction history
+    void displayTransactionHistory() const;
+    void displayAccountSummary() const;
+    
+private:
+    void addTransaction(Transaction::Type type, double amount, const std::string& description);
+    std::string getCurrentTimestamp() const;
+};
+
+#endif
+```
+
+---
+
+## Best Practices and Modern Usage
+
+### Do's ✅
+
+1. **Use member initializer lists**:
+```cpp
+class Point {
+    double m_x, m_y;
+public:
+    Point(double x, double y) : m_x{x}, m_y{y} {}  // ✅ Efficient initialization
+};
+```
+
+2. **Make single-argument constructors explicit**:
+```cpp
+class Temperature {
+public:
+    explicit Temperature(double celsius) : m_celsius{celsius} {}  // ✅ Prevents implicit conversion
+};
+```
+
+3. **Use const for read-only member functions**:
+```cpp
+class Circle {
+public:
+    double area() const { return 3.14159 * m_radius * m_radius; }  // ✅ const-correct
+};
+```
+
+4. **Follow RAII principle**:
+```cpp
+class FileHandler {
+public:
+    FileHandler(const std::string& filename) { /* acquire resource */ }
+    ~FileHandler() { /* release resource */ }  // ✅ Automatic cleanup
+};
+```
+
+### Don'ts ❌
+
+1. **Don't make everything public**:
+```cpp
+class BadClass {
+public:
+    int importantData;  // ❌ Should be private with accessors
+};
+```
+
+2. **Don't forget const-correctness**:
+```cpp
+class Circle {
+public:
+    double area() { return 3.14159 * m_radius * m_radius; }  // ❌ Should be const
+};
+```
+
+3. **Don't use assignment in constructor body for const members**:
+```cpp
+class Book {
+    const std::string m_title;
+public:
+    Book(const std::string& title) {
+        m_title = title;  // ❌ Error: can't assign to const
+    }
+};
+```
+
+### Modern C++ Features
+
+```cpp
+// C++11: Default and delete
+class NonCopyable {
+public:
+    NonCopyable() = default;                           // ✅ Explicitly defaulted
+    NonCopyable(const NonCopyable&) = delete;         // ✅ Explicitly deleted
+    NonCopyable& operator=(const NonCopyable&) = delete;
+};
+
+// C++11: Delegating constructors
+class Rectangle {
+public:
+    Rectangle(double w, double h) : m_width{w}, m_height{h} {}
+    Rectangle() : Rectangle(1.0, 1.0) {}              // ✅ Delegates to main constructor
+};
+
+// C++14: Auto return type deduction
+class Calculator {
+public:
+    auto add(double a, double b) const { return a + b; }  // ✅ Auto deduced as double
+};
+```
+
+---
+
+## Conclusion
+
+Object-Oriented Programming with classes provides:
+
+- **Encapsulation** - Bundle data and behavior together
+- **Data Protection** - Control access through public/private
+- **Automatic Resource Management** - RAII with constructors/destructors
+- **Code Reusability** - Objects can be used in multiple contexts
+- **Maintainability** - Changes to internal implementation don't affect users
+- **Type Safety** - Custom types prevent misuse
+
+Classes transform passive data structures into intelligent objects that can manage their own state and behavior. This foundation enables advanced OOP concepts like inheritance and polymorphism covered in later chapters.
+
+**Next: Chapter 15 - More on Classes (Operator Overloading, Friend Functions, Static Members)**
+
+# Chapter 15: More on Classes - Advanced Class Features
+
+## Building on Class Fundamentals: Advanced Features for Professional Programming
+
+In Chapter 14, we learned the basics of classes and encapsulation. Now we'll explore advanced features that make classes more powerful and flexible: operator overloading, friend functions, static members, and more sophisticated class design patterns.
+
+---
+
+## 15.1 - The Hidden "this" Pointer and const Member Functions
+
+### Understanding Object Context in Member Functions
+
+Every non-static member function receives an implicit `this` pointer:
+
+```cpp
+#include <iostream>
+
+class Counter {
+private:
+    int m_value;
+
+public:
+    Counter(int value = 0) : m_value{value} {}
+    
+    // These two functions are equivalent:
+    void increment1() {
+        m_value++;        // Implicit: this->m_value++
+    }
+    
+    void increment2() {
+        this->m_value++;  // Explicit use of this pointer
+    }
+    
+    // const member function - this becomes const Counter* const this
+    int getValue() const {
+        return m_value;   // Can't modify m_value through const this
+        // m_value++;     // ❌ Error: cannot modify in const function
+    }
+    
+    // Method chaining using this
+    Counter& add(int amount) {
+        m_value += amount;
+        return *this;     // Return reference to current object
+    }
+    
+    // Self-comparison
+    bool equals(const Counter& other) const {
+        return this->m_value == other.m_value;
+    }
+    
+    void displayAddress() const {
+        std::cout << "Object at address: " << this << ", value: " << m_value << '\n';
+    }
+};
+
+int main() {
+    Counter a{10};
+    Counter b{20};
+    
+    a.displayAddress();  // Different addresses
+    b.displayAddress();
+    
+    // Method chaining
+    a.add(5).add(3);     // Chained calls: 10 + 5 + 3 = 18
+    std::cout << "a after chaining: " << a.getValue() << '\n';
+    
+    // const object can only call const member functions
+    const Counter c{100};
+    std::cout << "const counter: " << c.getValue() << '\n';  // ✅ const function
+    // c.increment1();   // ❌ Error: non-const function on const object
+    
+    return 0;
+}
+```
+
+### Const-Correctness in Practice
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+class Student {
+private:
+    std::string m_name;
+    std::vector<int> m_grades;
+    mutable int m_accessCount;  // mutable allows modification in const functions
+
+public:
+    Student(const std::string& name) : m_name{name}, m_accessCount{0} {}
+    
+    // const member functions - promise not to modify object state
+    const std::string& getName() const {
+        ++m_accessCount;  // ✅ mutable member can be modified
+        return m_name;
+    }
+    
+    double getAverageGrade() const {
+        if (m_grades.empty()) return 0.0;
+        
+        int sum = 0;
+        for (int grade : m_grades) {
+            sum += grade;
+        }
+        return static_cast<double>(sum) / m_grades.size();
+    }
+    
+    size_t getGradeCount() const { return m_grades.size(); }
+    
+    int getAccessCount() const { return m_accessCount; }
+    
+    // non-const member functions - can modify object state
+    void addGrade(int grade) {
+        if (grade >= 0 && grade <= 100) {
+            m_grades.push_back(grade);
+        }
+    }
+    
+    void setName(const std::string& name) {
+        m_name = name;
+    }
+    
+    // const and non-const overloads
+    const std::vector<int>& getGrades() const {
+        std::cout << "const version called\n";
+        return m_grades;
+    }
+    
+    std::vector<int>& getGrades() {
+        std::cout << "non-const version called\n";
+        return m_grades;
+    }
+};
+
+void processStudent(const Student& student) {  // const reference parameter
+    std::cout << "Processing student: " << student.getName() << '\n';
+    std::cout << "Average grade: " << student.getAverageGrade() << '\n';
+    // student.addGrade(95);  // ❌ Error: const object, non-const function
+}
+
+int main() {
+    Student alice{"Alice"};
+    alice.addGrade(85);
+    alice.addGrade(92);
+    alice.addGrade(78);
+    
+    processStudent(alice);  // Calls const member functions
+    
+    // Demonstrate const vs non-const overloads
+    const Student& constRef = alice;
+    constRef.getGrades();   // Calls const version
+    alice.getGrades();      // Calls non-const version
+    
+    std::cout << "Access count: " << alice.getAccessCount() << '\n';
+    
+    return 0;
+}
+```
+
+---
+
+## 15.2 - Classes and Header Files Organization
+
+### Professional Project Structure
+
+**Math/Vector2D.h** (Interface)
+```cpp
+#ifndef VECTOR2D_H
+#define VECTOR2D_H
+
+#include <iostream>
+
+namespace Math {
+
+class Vector2D {
+private:
+    double m_x, m_y;
+
+public:
+    // Constructors
+    Vector2D(double x = 0.0, double y = 0.0);
+    Vector2D(const Vector2D& other);  // Copy constructor
+    
+    // Destructor
+    ~Vector2D() = default;
+    
+    // Assignment operator
+    Vector2D& operator=(const Vector2D& other);
+    
+    // Accessors
+    double getX() const { return m_x; }
+    double getY() const { return m_y; }
+    double magnitude() const;
+    double magnitudeSquared() const;
+    
+    // Mutators
+    void setX(double x) { m_x = x; }
+    void setY(double y) { m_y = y; }
+    void set(double x, double y);
+    void normalize();
+    
+    // Vector operations
+    Vector2D& add(const Vector2D& other);
+    Vector2D& subtract(const Vector2D& other);
+    Vector2D& multiply(double scalar);
+    double dotProduct(const Vector2D& other) const;
+    
+    // Utility functions
+    void print() const;
+    bool isZero() const;
+    
+    // Static utility functions
+    static double distance(const Vector2D& a, const Vector2D& b);
+    static Vector2D lerp(const Vector2D& a, const Vector2D& b, double t);
+    
+    // Friend functions (declared here, defined outside)
+    friend Vector2D operator+(const Vector2D& left, const Vector2D& right);
+    friend Vector2D operator-(const Vector2D& left, const Vector2D& right);
+    friend Vector2D operator*(const Vector2D& vec, double scalar);
+    friend Vector2D operator*(double scalar, const Vector2D& vec);
+    friend std::ostream& operator<<(std::ostream& out, const Vector2D& vec);
+};
+
+// Free function declarations
+Vector2D operator+(const Vector2D& left, const Vector2D& right);
+Vector2D operator-(const Vector2D& left, const Vector2D& right);
+Vector2D operator*(const Vector2D& vec, double scalar);
+Vector2D operator*(double scalar, const Vector2D& vec);
+std::ostream& operator<<(std::ostream& out, const Vector2D& vec);
+
+} // namespace Math
+
+#endif
+```
+
+**Math/Vector2D.cpp** (Implementation)
+```cpp
+#include "Vector2D.h"
+#include <cmath>
+#include <iostream>
+
+namespace Math {
+
+// Constructor implementations
+Vector2D::Vector2D(double x, double y) : m_x{x}, m_y{y} {}
+
+Vector2D::Vector2D(const Vector2D& other) : m_x{other.m_x}, m_y{other.m_y} {}
+
+// Assignment operator
+Vector2D& Vector2D::operator=(const Vector2D& other) {
+    if (this != &other) {  // Self-assignment check
+        m_x = other.m_x;
+        m_y = other.m_y;
+    }
+    return *this;
+}
+
+// Magnitude calculations
+double Vector2D::magnitude() const {
+    return std::sqrt(m_x * m_x + m_y * m_y);
+}
+
+double Vector2D::magnitudeSquared() const {
+    return m_x * m_x + m_y * m_y;  // Avoid expensive sqrt when possible
+}
+
+// Mutator implementations
+void Vector2D::set(double x, double y) {
+    m_x = x;
+    m_y = y;
+}
+
+void Vector2D::normalize() {
+    double mag = magnitude();
+    if (mag > 0.0) {
+        m_x /= mag;
+        m_y /= mag;
+    }
+}
+
+// Vector operation implementations
+Vector2D& Vector2D::add(const Vector2D& other) {
+    m_x += other.m_x;
+    m_y += other.m_y;
+    return *this;
+}
+
+Vector2D& Vector2D::subtract(const Vector2D& other) {
+    m_x -= other.m_x;
+    m_y -= other.m_y;
+    return *this;
+}
+
+Vector2D& Vector2D::multiply(double scalar) {
+    m_x *= scalar;
+    m_y *= scalar;
+    return *this;
+}
+
+double Vector2D::dotProduct(const Vector2D& other) const {
+    return m_x * other.m_x + m_y * other.m_y;
+}
+
+// Utility function implementations
+void Vector2D::print() const {
+    std::cout << "(" << m_x << ", " << m_y << ")";
+}
+
+bool Vector2D::isZero() const {
+    const double EPSILON = 0.0001;
+    return std::abs(m_x) < EPSILON && std::abs(m_y) < EPSILON;
+}
+
+// Static function implementations
+double Vector2D::distance(const Vector2D& a, const Vector2D& b) {
+    double dx = a.m_x - b.m_x;
+    double dy = a.m_y - b.m_y;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+Vector2D Vector2D::lerp(const Vector2D& a, const Vector2D& b, double t) {
+    return Vector2D{
+        a.m_x + t * (b.m_x - a.m_x),
+        a.m_y + t * (b.m_y - a.m_y)
+    };
+}
+
+// Friend function implementations
+Vector2D operator+(const Vector2D& left, const Vector2D& right) {
+    return Vector2D{left.m_x + right.m_x, left.m_y + right.m_y};
+}
+
+Vector2D operator-(const Vector2D& left, const Vector2D& right) {
+    return Vector2D{left.m_x - right.m_x, left.m_y - right.m_y};
+}
+
+Vector2D operator*(const Vector2D& vec, double scalar) {
+    return Vector2D{vec.m_x * scalar, vec.m_y * scalar};
+}
+
+Vector2D operator*(double scalar, const Vector2D& vec) {
+    return vec * scalar;  // Reuse the above operator
+}
+
+std::ostream& operator<<(std::ostream& out, const Vector2D& vec) {
+    out << "(" << vec.m_x << ", " << vec.m_y << ")";
+    return out;
+}
+
+} // namespace Math
+```
+
+**main.cpp** (Usage)
+```cpp
+#include "Math/Vector2D.h"
+#include <iostream>
+
+int main() {
+    using namespace Math;
+    
+    Vector2D a{3.0, 4.0};
+    Vector2D b{1.0, 2.0};
+    
+    std::cout << "Vector a: " << a << '\n';
+    std::cout << "Vector b: " << b << '\n';
+    std::cout << "Magnitude of a: " << a.magnitude() << '\n';
+    
+    // Using operators
+    Vector2D c = a + b;
+    std::cout << "a + b = " << c << '\n';
+    
+    Vector2D d = a * 2.0;
+    std::cout << "a * 2 = " << d << '\n';
+    
+    // Using member functions
+    Vector2D e = a;
+    e.normalize();
+    std::cout << "Normalized a: " << e << '\n';
+    
+    // Static functions
+    std::cout << "Distance between a and b: " << Vector2D::distance(a, b) << '\n';
+    
+    return 0;
+}
+```
+
+---
+
+## 15.3 - Nested Types and Nested Classes
+
+### Nested Enumerations and Type Aliases
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+class NetworkConnection {
+public:
+    // Nested enumeration - scoped to the class
+    enum class Protocol { TCP, UDP, HTTP, HTTPS };
+    enum class Status { Disconnected, Connecting, Connected, Error };
+    
+    // Nested type alias
+    using Port = unsigned short;
+    using Address = std::string;
+    
+private:
+    Address m_serverAddress;
+    Port m_port;
+    Protocol m_protocol;
+    Status m_status;
+
+public:
+    NetworkConnection(const Address& address, Port port, Protocol protocol)
+        : m_serverAddress{address}, m_port{port}, m_protocol{protocol}, m_status{Status::Disconnected} {}
+    
+    bool connect() {
+        m_status = Status::Connecting;
+        std::cout << "Connecting to " << m_serverAddress << ":" << m_port;
+        std::cout << " using " << protocolToString(m_protocol) << '\n';
+        
+        // Simulate connection logic
+        m_status = Status::Connected;
+        return true;
+    }
+    
+    void disconnect() {
+        if (m_status == Status::Connected) {
+            m_status = Status::Disconnected;
+            std::cout << "Disconnected from server\n";
+        }
+    }
+    
+    Status getStatus() const { return m_status; }
+    Protocol getProtocol() const { return m_protocol; }
+    
+private:
+    std::string protocolToString(Protocol protocol) const {
+        switch (protocol) {
+            case Protocol::TCP:   return "TCP";
+            case Protocol::UDP:   return "UDP";
+            case Protocol::HTTP:  return "HTTP";
+            case Protocol::HTTPS: return "HTTPS";
+            default: return "Unknown";
+        }
+    }
+};
+
+int main() {
+    // Use nested types with scope resolution
+    NetworkConnection conn{"192.168.1.1", 8080, NetworkConnection::Protocol::HTTP};
+    
+    conn.connect();
+    
+    if (conn.getStatus() == NetworkConnection::Status::Connected) {
+        std::cout << "Connection successful!\n";
+    }
+    
+    conn.disconnect();
+    
+    return 0;
+}
+```
+
+### Nested Classes for Helper Objects
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+
+class Database {
+private:
+    // Nested class for internal use
+    class Connection {
+    private:
+        std::string m_connectionString;
+        bool m_isOpen;
+        
+    public:
+        Connection(const std::string& connStr) : m_connectionString{connStr}, m_isOpen{false} {}
+        
+        bool open() {
+            std::cout << "Opening database connection: " << m_connectionString << '\n';
+            m_isOpen = true;
+            return true;
+        }
+        
+        void close() {
+            if (m_isOpen) {
+                std::cout << "Closing database connection\n";
+                m_isOpen = false;
+            }
+        }
+        
+        bool execute(const std::string& query) {
+            if (!m_isOpen) return false;
+            std::cout << "Executing: " << query << '\n';
+            return true;
+        }
+        
+        bool isOpen() const { return m_isOpen; }
     };
     
-    // Find expensive items
-    auto expensive_threshold = 100.0;
-    auto expensive_count = std::count_if(inventory.begin(), inventory.end(),
-        [expensive_threshold](const Product& p) {
-            return p.price > expensive_threshold;
-        });
+    Connection m_connection;
+    std::string m_databaseName;
+
+public:
+    Database(const std::string& dbName, const std::string& connStr)
+        : m_databaseName{dbName}, m_connection{connStr} {}
     
-    std::cout << "Products over $" << expensive_threshold << ": " << expensive_count << "\n";
+    ~Database() {
+        m_connection.close();
+    }
     
-    // Sort by total value (price * quantity)
-    std::sort(inventory.begin(), inventory.end(),
-        [](const Product& a, const Product& b) {
-            return a.totalValue() > b.totalValue();  // Descending order
-        });
+    bool connect() {
+        return m_connection.open();
+    }
     
-    std::cout << "Most valuable inventory item: " << inventory[0].name 
-              << " ($" << inventory[0].totalValue() << ")\n";
+    bool executeQuery(const std::string& query) {
+        return m_connection.execute(query);
+    }
     
-    // Transform to create a summary
-    std::vector<std::string> summaries;
-    std::transform(inventory.begin(), inventory.end(), std::back_inserter(summaries),
-        [](const Product& p) {
-            return p.name + ": $" + std::to_string(p.totalValue());
-        });
+    bool isConnected() const {
+        return m_connection.isOpen();
+    }
     
-    // Calculate total inventory value
-    auto total_value = std::accumulate(inventory.begin(), inventory.end(), 0.0,
-        [](double sum, const Product& p) {
-            return sum + p.totalValue();
-        });
+    const std::string& getName() const { return m_databaseName; }
+};
+
+int main() {
+    Database userDB{"UserDatabase", "postgresql://localhost:5432/users"};
     
-    std::cout << "Total inventory value: $" << total_value << "\n";
+    if (userDB.connect()) {
+        userDB.executeQuery("SELECT * FROM users");
+        userDB.executeQuery("UPDATE users SET last_login = NOW() WHERE id = 1");
+    }
     
-    // Group products by price range
-    std::map<std::string, std::vector<Product>> price_groups;
-    std::for_each(inventory.begin(), inventory.end(),
-        [&price_groups](const Product& p) {
-            std::string category;
-            if (p.price < 50.0) category = "Budget";
-            else if (p.price < 200.0) category = "Mid-range";
-            else category = "Premium";
+    // Connection automatically closed by destructor
+    
+    return 0;
+}
+```
+
+---
+
+## 15.4 - Timing Your Code
+
+### Performance Measurement Class
+
+```cpp
+#include <iostream>
+#include <chrono>
+#include <vector>
+#include <algorithm>
+#include <string>
+
+class Timer {
+private:
+    std::chrono::steady_clock::time_point m_startTime;
+    std::chrono::steady_clock::time_point m_endTime;
+    bool m_running;
+
+public:
+    Timer() : m_running{false} {}
+    
+    void start() {
+        m_startTime = std::chrono::steady_clock::now();
+        m_running = true;
+    }
+    
+    void stop() {
+        if (m_running) {
+            m_endTime = std::chrono::steady_clock::now();
+            m_running = false;
+        }
+    }
+    
+    double getElapsedMilliseconds() const {
+        if (m_running) {
+            auto currentTime = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                currentTime - m_startTime);
+            return elapsed.count() / 1000.0;
+        } else {
+            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+                m_endTime - m_startTime);
+            return elapsed.count() / 1000.0;
+        }
+    }
+    
+    double getElapsedSeconds() const {
+        return getElapsedMilliseconds() / 1000.0;
+    }
+    
+    bool isRunning() const { return m_running; }
+};
+
+// RAII Timer for automatic measurement
+class ScopedTimer {
+private:
+    Timer m_timer;
+    std::string m_label;
+
+public:
+    ScopedTimer(const std::string& label) : m_label{label} {
+        std::cout << "Starting: " << m_label << '\n';
+        m_timer.start();
+    }
+    
+    ~ScopedTimer() {
+        m_timer.stop();
+        std::cout << "Completed: " << m_label 
+                  << " (" << m_timer.getElapsedMilliseconds() << " ms)\n";
+    }
+};
+
+// Performance testing functions
+void slowFunction() {
+    std::vector<int> data(1000000);
+    for (int i = 0; i < 1000000; ++i) {
+        data[i] = i * i;
+    }
+    std::sort(data.begin(), data.end());
+}
+
+void fastFunction() {
+    std::vector<int> data;
+    data.reserve(1000000);  // Pre-allocate memory
+    for (int i = 0; i < 1000000; ++i) {
+        data.push_back(i * i);
+    }
+}
+
+int main() {
+    // Manual timing
+    Timer manualTimer;
+    
+    manualTimer.start();
+    slowFunction();
+    manualTimer.stop();
+    
+    std::cout << "Manual timing - Slow function: " 
+              << manualTimer.getElapsedMilliseconds() << " ms\n";
+    
+    // RAII automatic timing
+    {
+        ScopedTimer autoTimer{"Fast function execution"};
+        fastFunction();
+        // Timer automatically stops and reports when going out of scope
+    }
+    
+    // Multiple measurements
+    std::vector<double> measurements;
+    for (int i = 0; i < 5; ++i) {
+        Timer timer;
+        timer.start();
+        fastFunction();
+        timer.stop();
+        measurements.push_back(timer.getElapsedMilliseconds());
+    }
+    
+    double average = 0.0;
+    for (double time : measurements) {
+        average += time;
+    }
+    average /= measurements.size();
+    
+    std::cout << "Average time over 5 runs: " << average << " ms\n";
+    
+    return 0;
+}
+```
+
+---
+
+## 15.5 - Static Member Variables
+
+### Shared Data Among All Instances
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+class Employee {
+private:
+    static int s_nextEmployeeId;        // Shared by all instances
+    static double s_minimumWage;        // Company-wide policy
+    static std::string s_companyName;   // Company information
+    
+    int m_employeeId;                   // Instance-specific data
+    std::string m_name;
+    double m_salary;
+    
+public:
+    Employee(const std::string& name, double salary)
+        : m_employeeId{s_nextEmployeeId++}, m_name{name}, m_salary{salary} {
+        if (salary < s_minimumWage) {
+            m_salary = s_minimumWage;
+            std::cout << "Salary adjusted to minimum wage for " << m_name << '\n';
+        }
+    }
+    
+    // Static member functions - can only access static members
+    static void setCompanyName(const std::string& name) {
+        s_companyName = name;
+    }
+    
+    static const std::string& getCompanyName() {
+        return s_companyName;
+    }
+    
+    static void setMinimumWage(double wage) {
+        if (wage > 0) {
+            s_minimumWage = wage;
+            std::cout << "Minimum wage updated to $" << wage << '\n';
+        }
+    }
+    
+    static double getMinimumWage() {
+        return s_minimumWage;
+    }
+    
+    static int getNextEmployeeId() {
+        return s_nextEmployeeId;
+    }
+    
+    static int getTotalEmployees() {
+        return s_nextEmployeeId - 1;
+    }
+    
+    // Instance member functions
+    int getEmployeeId() const { return m_employeeId; }
+    const std::string& getName() const { return m_name; }
+    double getSalary() const { return m_salary; }
+    
+    void setSalary(double salary) {
+        if (salary >= s_minimumWage) {
+            m_salary = salary;
+        } else {
+            std::cout << "Cannot set salary below minimum wage\n";
+        }
+    }
+    
+    void displayInfo() const {
+        std::cout << "Employee #" << m_employeeId << ": " << m_name 
+                  << " at " << s_companyName << " earns $" << m_salary << '\n';
+    }
+};
+
+// Static member variable definitions (required outside class)
+int Employee::s_nextEmployeeId = 1000;         // Start employee IDs at 1000
+double Employee::s_minimumWage = 15.0;         // $15/hour minimum
+std::string Employee::s_companyName = "TechCorp";
+
+int main() {
+    std::cout << "Company: " << Employee::getCompanyName() << '\n';
+    std::cout << "Current minimum wage: $" << Employee::getMinimumWage() << '\n';
+    std::cout << "Total employees: " << Employee::getTotalEmployees() << '\n';
+    
+    // Create employees
+    Employee alice{"Alice Johnson", 25.0};
+    Employee bob{"Bob Smith", 10.0};    // Below minimum, will be adjusted
+    Employee charlie{"Charlie Brown", 30.0};
+    
+    alice.displayInfo();
+    bob.displayInfo();
+    charlie.displayInfo();
+    
+    std::cout << "Total employees after creation: " << Employee::getTotalEmployees() << '\n';
+    
+    // Update company-wide policies
+    Employee::setMinimumWage(18.0);
+    Employee::setCompanyName("TechCorp Solutions");
+    
+    // Try to set salary below new minimum
+    bob.setSalary(16.0);  // Will be rejected
+    bob.setSalary(20.0);  // Will be accepted
+    
+    bob.displayInfo();
+    
+    return 0;
+}
+```
+
+### Static Members for Configuration and Tracking
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+class GameEntity {
+private:
+    static int s_nextId;
+    static std::vector<GameEntity*> s_allEntities;  // Track all instances
+    static bool s_debugMode;
+    static int s_maxEntities;
+    
+    int m_id;
+    std::string m_name;
+    double m_x, m_y;
+    bool m_active;
+    
+public:
+    GameEntity(const std::string& name, double x = 0.0, double y = 0.0)
+        : m_id{s_nextId++}, m_name{name}, m_x{x}, m_y{y}, m_active{true} {
+        
+        if (s_allEntities.size() >= static_cast<size_t>(s_maxEntities)) {
+            throw std::runtime_error("Maximum number of entities exceeded");
+        }
+        
+        s_allEntities.push_back(this);
+        
+        if (s_debugMode) {
+            std::cout << "Entity created: " << m_name << " (ID: " << m_id << ")\n";
+        }
+    }
+    
+    ~GameEntity() {
+        // Remove from static tracking vector
+        auto it = std::find(s_allEntities.begin(), s_allEntities.end(), this);
+        if (it != s_allEntities.end()) {
+            s_allEntities.erase(it);
+        }
+        
+        if (s_debugMode) {
+            std::cout << "Entity destroyed: " << m_name << " (ID: " << m_id << ")\n";
+        }
+    }
+    
+    // Static configuration functions
+    static void setDebugMode(bool enabled) { s_debugMode = enabled; }
+    static bool isDebugMode() { return s_debugMode; }
+    static void setMaxEntities(int max) { s_maxEntities = max; }
+    static int getMaxEntities() { return s_maxEntities; }
+    
+    // Static entity management
+    static size_t getEntityCount() { return s_allEntities.size(); }
+    
+    static void printAllEntities() {
+        std::cout << "=== All Entities (" << s_allEntities.size() << ") ===\n";
+        for (const GameEntity* entity : s_allEntities) {
+            entity->printInfo();
+        }
+    }
+    
+    static GameEntity* findEntityById(int id) {
+        for (GameEntity* entity : s_allEntities) {
+            if (entity->m_id == id) {
+                return entity;
+            }
+        }
+        return nullptr;
+    }
+    
+    static void updateAllEntities() {
+        for (GameEntity* entity : s_allEntities) {
+            if (entity->m_active) {
+                entity->update();
+            }
+        }
+    }
+    
+    // Instance methods
+    int getId() const { return m_id; }
+    const std::string& getName() const { return m_name; }
+    void setPosition(double x, double y) { m_x = x; m_y = y; }
+    void setActive(bool active) { m_active = active; }
+    bool isActive() const { return m_active; }
+    
+    void printInfo() const {
+        std::cout << "  " << m_name << " (ID: " << m_id << ") at (" 
+                  << m_x << ", " << m_y << ") " 
+                  << (m_active ? "[Active]" : "[Inactive]") << '\n';
+    }
+    
+private:
+    void update() {
+        // Simple movement simulation
+        m_x += 1.0;
+        if (s_debugMode) {
+            std::cout << m_name << " moved to (" << m_x << ", " << m_y << ")\n";
+        }
+    }
+};
+
+// Static member definitions
+int GameEntity::s_nextId = 1;
+std::vector<GameEntity*> GameEntity::s_allEntities;
+bool GameEntity::s_debugMode = false;
+int GameEntity::s_maxEntities = 100;
+
+int main() {
+    // Configure system
+    GameEntity::setDebugMode(true);
+    GameEntity::setMaxEntities(5);
+    
+    std::cout << "Max entities: " << GameEntity::getMaxEntities() << '\n';
+    std::cout << "Current count: " << GameEntity::getEntityCount() << '\n';
+    
+    // Create entities
+    GameEntity player{"Player", 0.0, 0.0};
+    GameEntity enemy1{"Enemy1", 10.0, 5.0};
+    GameEntity enemy2{"Enemy2", -5.0, 8.0};
+    
+    GameEntity::printAllEntities();
+    
+    // Find specific entity
+    GameEntity* found = GameEntity::findEntityById(2);
+    if (found) {
+        std::cout << "Found entity: " << found->getName() << '\n';
+        found->setActive(false);
+    }
+    
+    // Update all entities
+    std::cout << "\n=== Updating all entities ===\n";
+    GameEntity::updateAllEntities();
+    
+    GameEntity::printAllEntities();
+    
+    return 0;
+    // All entities destroyed automatically, removed from static vector
+}
+```
+
+---
+
+## 15.6 - Static Member Functions
+
+### Static Functions for Utility and Factory Patterns
+
+```cpp
+#include <iostream>
+#include <string>
+#include <cmath>
+#include <random>
+
+class MathUtils {
+public:
+    // Static utility functions - no instance required
+    static double degreesToRadians(double degrees) {
+        return degrees * M_PI / 180.0;
+    }
+    
+    static double radiansToDegrees(double radians) {
+        return radians * 180.0 / M_PI;
+    }
+    
+    static bool isPrime(int number) {
+        if (number <= 1) return false;
+        if (number <= 3) return true;
+        if (number % 2 == 0 || number % 3 == 0) return false;
+        
+        for (int i = 5; i * i <= number; i += 6) {
+            if (number % i == 0 || number % (i + 2) == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    static int gcd(int a, int b) {
+        while (b != 0) {
+            int temp = b;
+            b = a % b;
+            a = temp;
+        }
+        return a;
+    }
+    
+    static double distance(double x1, double y1, double x2, double y2) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+};
+
+class Color {
+private:
+    int m_red, m_green, m_blue;
+    
+    // Private constructor - force use of factory methods
+    Color(int red, int green, int blue) 
+        : m_red{clamp(red)}, m_green{clamp(green)}, m_blue{clamp(blue)} {}
+
+public:
+    // Static factory methods
+    static Color fromRGB(int red, int green, int blue) {
+        return Color{red, green, blue};
+    }
+    
+    static Color fromHex(const std::string& hexColor) {
+        // Simplified hex parsing (assumes #RRGGBB format)
+        if (hexColor.length() == 7 && hexColor[0] == '#') {
+            int red = std::stoi(hexColor.substr(1, 2), nullptr, 16);
+            int green = std::stoi(hexColor.substr(3, 2), nullptr, 16);
+            int blue = std::stoi(hexColor.substr(5, 2), nullptr, 16);
+            return Color{red, green, blue};
+        }
+        return Color{0, 0, 0}; // Default to black for invalid input
+    }
+    
+    static Color random() {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        static std::uniform_int_distribution<> dis(0, 255);
+        
+        return Color{dis(gen), dis(gen), dis(gen)};
+    }
+    
+    // Predefined color constants (static factory methods)
+    static Color red() { return Color{255, 0, 0}; }
+    static Color green() { return Color{0, 255, 0}; }
+    static Color blue() { return Color{0, 0, 255}; }
+    static Color white() { return Color{255, 255, 255}; }
+    static Color black() { return Color{0, 0, 0}; }
+    
+    // Instance methods
+    int getRed() const { return m_red; }
+    int getGreen() const { return m_green; }
+    int getBlue() const { return m_blue; }
+    
+    void display() const {
+        std::cout << "RGB(" << m_red << ", " << m_green << ", " << m_blue << ")";
+    }
+    
+    std::string toHex() const {
+        char buffer[8];
+        std::sprintf(buffer, "#%02X%02X%02X", m_red, m_green, m_blue);
+        return std::string(buffer);
+    }
+    
+private:
+    static int clamp(int value) {
+        return (value < 0) ? 0 : (value > 255) ? 255 : value;
+    }
+};
+
+// Singleton pattern using static members
+class Logger {
+private:
+    static Logger* s_instance;
+    std::string m_logLevel;
+    bool m_enabled;
+    
+    // Private constructor prevents direct instantiation
+    Logger() : m_logLevel{"INFO"}, m_enabled{true} {}
+
+public:
+    // Static method to get singleton instance
+    static Logger& getInstance() {
+        if (s_instance == nullptr) {
+            s_instance = new Logger();
+        }
+        return *s_instance;
+    }
+    
+    // Delete copy constructor and assignment operator
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+    
+    static void setLogLevel(const std::string& level) {
+        getInstance().m_logLevel = level;
+    }
+    
+    static void enable() { getInstance().m_enabled = true; }
+    static void disable() { getInstance().m_enabled = false; }
+    
+    static void log(const std::string& message) {
+        Logger& logger = getInstance();
+        if (logger.m_enabled) {
+            std::cout << "[" << logger.m_logLevel << "] " << message << '\n';
+        }
+    }
+    
+    static void info(const std::string& message) {
+        log("INFO: " + message);
+    }
+    
+    static void error(const std::string& message) {
+        log("ERROR: " + message);
+    }
+    
+    // Cleanup (optional - for demonstration)
+    static void cleanup() {
+        delete s_instance;
+        s_instance = nullptr;
+    }
+};
+
+// Static member definition
+Logger* Logger::s_instance = nullptr;
+
+int main() {
+    // Using static utility functions
+    std::cout << "45 degrees = " << MathUtils::degreesToRadians(45.0) << " radians\n";
+    std::cout << "Is 17 prime? " << (MathUtils::isPrime(17) ? "Yes" : "No") << '\n';
+    std::cout << "GCD(48, 18) = " << MathUtils::gcd(48, 18) << '\n';
+    std::cout << "Distance: " << MathUtils::distance(0, 0, 3, 4) << '\n';
+    
+    // Using static factory methods
+    Color red = Color::red();
+    Color fromHex = Color::fromHex("#FF5733");
+    Color random = Color::random();
+    
+    std::cout << "\nColors:\n";
+    std::cout << "Red: "; red.display(); std::cout << " -> " << red.toHex() << '\n';
+    std::cout << "From hex: "; fromHex.display(); std::cout << " -> " << fromHex.toHex() << '\n';
+    std::cout << "Random: "; random.display(); std::cout << " -> " << random.toHex() << '\n';
+    
+    // Using singleton logger
+    Logger::info("Application started");
+    Logger::setLogLevel("DEBUG");
+    Logger::log("This is a debug message");
+    Logger::error("This is an error message");
+    
+    Logger::disable();
+    Logger::info("This won't be printed");
+    
+    Logger::enable();
+    Logger::info("Logging re-enabled");
+    
+    Logger::cleanup();  // Optional cleanup
+    
+    return 0;
+}
+```
+
+---
+
+## 15.7 - Friend Functions and Friend Classes
+
+### Friend Functions for Enhanced Operator Overloading
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Fraction {
+private:
+    int m_numerator;
+    int m_denominator;
+    
+    // Helper function to simplify fractions
+    void simplify() {
+        int gcd = calculateGCD(std::abs(m_numerator), std::abs(m_denominator));
+        m_numerator /= gcd;
+        m_denominator /= gcd;
+        
+        // Keep denominator positive
+        if (m_denominator < 0) {
+            m_numerator = -m_numerator;
+            m_denominator = -m_denominator;
+        }
+    }
+    
+    static int calculateGCD(int a, int b) {
+        while (b != 0) {
+            int temp = b;
+            b = a % b;
+            a = temp;
+        }
+        return a;
+    }
+
+public:
+    Fraction(int numerator = 0, int denominator = 1) 
+        : m_numerator{numerator}, m_denominator{denominator} {
+        if (denominator == 0) {
+            throw std::invalid_argument("Denominator cannot be zero");
+        }
+        simplify();
+    }
+    
+    // Member function operators (for assignment-style operations)
+    Fraction& operator+=(const Fraction& other) {
+        m_numerator = m_numerator * other.m_denominator + other.m_numerator * m_denominator;
+        m_denominator = m_denominator * other.m_denominator;
+        simplify();
+        return *this;
+    }
+    
+    Fraction& operator-=(const Fraction& other) {
+        m_numerator = m_numerator * other.m_denominator - other.m_numerator * m_denominator;
+        m_denominator = m_denominator * other.m_denominator;
+        simplify();
+        return *this;
+    }
+    
+    // Friend functions for binary operators (need access to private members)
+    friend Fraction operator+(const Fraction& left, const Fraction& right);
+    friend Fraction operator-(const Fraction& left, const Fraction& right);
+    friend Fraction operator*(const Fraction& left, const Fraction& right);
+    friend Fraction operator/(const Fraction& left, const Fraction& right);
+    
+    // Friend functions for comparison operators
+    friend bool operator==(const Fraction& left, const Fraction& right);
+    friend bool operator!=(const Fraction& left, const Fraction& right);
+    friend bool operator<(const Fraction& left, const Fraction& right);
+    friend bool operator>(const Fraction& left, const Fraction& right);
+    
+    // Friend function for stream insertion
+    friend std::ostream& operator<<(std::ostream& out, const Fraction& fraction);
+    friend std::istream& operator>>(std::istream& in, Fraction& fraction);
+    
+    // Accessor methods
+    int getNumerator() const { return m_numerator; }
+    int getDenominator() const { return m_denominator; }
+    
+    double toDouble() const {
+        return static_cast<double>(m_numerator) / m_denominator;
+    }
+};
+
+// Friend function implementations (have access to private members)
+Fraction operator+(const Fraction& left, const Fraction& right) {
+    return Fraction{
+        left.m_numerator * right.m_denominator + right.m_numerator * left.m_denominator,
+        left.m_denominator * right.m_denominator
+    };
+}
+
+Fraction operator-(const Fraction& left, const Fraction& right) {
+    return Fraction{
+        left.m_numerator * right.m_denominator - right.m_numerator * left.m_denominator,
+        left.m_denominator * right.m_denominator
+    };
+}
+
+Fraction operator*(const Fraction& left, const Fraction& right) {
+    return Fraction{
+        left.m_numerator * right.m_numerator,
+        left.m_denominator * right.m_denominator
+    };
+}
+
+Fraction operator/(const Fraction& left, const Fraction& right) {
+    return Fraction{
+        left.m_numerator * right.m_denominator,
+        left.m_denominator * right.m_numerator
+    };
+}
+
+bool operator==(const Fraction& left, const Fraction& right) {
+    return left.m_numerator == right.m_numerator && 
+           left.m_denominator == right.m_denominator;
+}
+
+bool operator!=(const Fraction& left, const Fraction& right) {
+    return !(left == right);
+}
+
+bool operator<(const Fraction& left, const Fraction& right) {
+    return left.m_numerator * right.m_denominator < 
+           right.m_numerator * left.m_denominator;
+}
+
+bool operator>(const Fraction& left, const Fraction& right) {
+    return right < left;
+}
+
+std::ostream& operator<<(std::ostream& out, const Fraction& fraction) {
+    if (fraction.m_denominator == 1) {
+        out << fraction.m_numerator;
+    } else {
+        out << fraction.m_numerator << "/" << fraction.m_denominator;
+    }
+    return out;
+}
+
+std::istream& operator>>(std::istream& in, Fraction& fraction) {
+    int numerator, denominator = 1;
+    char slash;
+    
+    in >> numerator;
+    if (in.peek() == '/') {
+        in >> slash >> denominator;
+    }
+    
+    fraction = Fraction{numerator, denominator};
+    return in;
+}
+
+int main() {
+    try {
+        Fraction a{3, 4};
+        Fraction b{1, 2};
+        
+        std::cout << "a = " << a << '\n';
+        std::cout << "b = " << b << '\n';
+        
+        // Using friend operators
+        Fraction sum = a + b;
+        Fraction difference = a - b;
+        Fraction product = a * b;
+        Fraction quotient = a / b;
+        
+        std::cout << "a + b = " << sum << '\n';
+        std::cout << "a - b = " << difference << '\n';
+        std::cout << "a * b = " << product << '\n';
+        std::cout << "a / b = " << quotient << '\n';
+        
+        // Comparisons
+        std::cout << "a == b: " << (a == b ? "true" : "false") << '\n';
+        std::cout << "a > b: " << (a > b ? "true" : "false") << '\n';
+        
+        // Assignment operators
+        Fraction c{1, 3};
+        c += a;
+        std::cout << "After c += a: c = " << c << '\n';
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << '\n';
+    }
+    
+    return 0;
+}
+    
+
+# Chapters 16-18: Comprehensive Object-Oriented Programming Guide
+
+## From Basic Classes to Advanced OOP: Inheritance, Virtual Functions, and Polymorphism
+
+Building on the foundation from Chapters 14-15, we now explore the advanced pillars of Object-Oriented Programming: **Inheritance** (Chapter 16), **Virtual Functions** (Chapter 17), and **Polymorphism** (Chapter 18). These concepts enable code reuse, extensibility, and elegant design patterns essential for large-scale software development.
+
+---
+
+## Chapter 16: Inheritance - Building Class Hierarchies
+
+### 16.1 - Introduction to Inheritance
+
+Inheritance allows us to create new classes based on existing classes, promoting code reuse and establishing "is-a" relationships.
+
+```cpp
+#include <iostream>
+#include <string>
+
+// Base class (parent class)
+class Animal {
+protected:  // Accessible to derived classes, but not to external code
+    std::string m_name;
+    int m_age;
+
+public:
+    Animal(const std::string& name, int age) : m_name{name}, m_age{age} {
+        std::cout << "Animal constructor: " << m_name << '\n';
+    }
+    
+    ~Animal() {
+        std::cout << "Animal destructor: " << m_name << '\n';
+    }
+    
+    void eat() const {
+        std::cout << m_name << " is eating\n";
+    }
+    
+    void sleep() const {
+        std::cout << m_name << " is sleeping\n";
+    }
+    
+    const std::string& getName() const { return m_name; }
+    int getAge() const { return m_age; }
+    
+    void displayInfo() const {
+        std::cout << "Animal: " << m_name << ", Age: " << m_age << '\n';
+    }
+};
+
+// Derived class (child class) - inherits from Animal
+class Dog : public Animal {  // "public inheritance" - is-a relationship
+private:
+    std::string m_breed;
+
+public:
+    Dog(const std::string& name, int age, const std::string& breed)
+        : Animal{name, age}, m_breed{breed} {  // Call base class constructor
+        std::cout << "Dog constructor: " << m_name << '\n';
+    }
+    
+    ~Dog() {
+        std::cout << "Dog destructor: " << m_name << '\n';
+    }
+    
+    // Additional methods specific to Dog
+    void bark() const {
+        std::cout << m_name << " barks: Woof! Woof!\n";
+    }
+    
+    void wagTail() const {
+        std::cout << m_name << " wags tail happily\n";
+    }
+    
+    const std::string& getBreed() const { return m_breed; }
+    
+    // Override base class method with additional information
+    void displayInfo() const {
+        std::cout << "Dog: " << m_name << " (" << m_breed << "), Age: " << m_age << '\n';
+    }
+};
+
+class Cat : public Animal {
+private:
+    bool m_isIndoor;
+
+public:
+    Cat(const std::string& name, int age, bool isIndoor = true)
+        : Animal{name, age}, m_isIndoor{isIndoor} {
+        std::cout << "Cat constructor: " << m_name << '\n';
+    }
+    
+    ~Cat() {
+        std::cout << "Cat destructor: " << m_name << '\n';
+    }
+    
+    void meow() const {
+        std::cout << m_name << " meows: Meow! Meow!\n";
+    }
+    
+    void purr() const {
+        std::cout << m_name << " purrs contentedly\n";
+    }
+    
+    bool isIndoor() const { return m_isIndoor; }
+    
+    void displayInfo() const {
+        std::cout << "Cat: " << m_name << ", Age: " << m_age 
+                  << " (" << (m_isIndoor ? "Indoor" : "Outdoor") << ")\n";
+    }
+};
+
+int main() {
+    std::cout << "=== Creating Animals ===\n";
+    
+    Dog buddy{"Buddy", 3, "Golden Retriever"};
+    Cat whiskers{"Whiskers", 2, true};
+    
+    std::cout << "\n=== Using inherited methods ===\n";
+    buddy.eat();        // Inherited from Animal
+    buddy.sleep();      // Inherited from Animal
+    buddy.bark();       // Dog-specific method
+    buddy.wagTail();    // Dog-specific method
+    
+    whiskers.eat();     // Inherited from Animal
+    whiskers.sleep();   // Inherited from Animal
+    whiskers.meow();    // Cat-specific method
+    whiskers.purr();    // Cat-specific method
+    
+    std::cout << "\n=== Display information ===\n";
+    buddy.displayInfo();    // Dog's version
+    whiskers.displayInfo(); // Cat's version
+    
+    std::cout << "\n=== Destructors called automatically ===\n";
+    return 0;
+    // Destructors called in reverse order: derived, then base
+}
+```
+
+### 16.2 - Order of Construction and Destruction
+
+Understanding the construction/destruction order is crucial for proper resource management:
+
+```cpp
+#include <iostream>
+#include <string>
+
+class Component {
+private:
+    std::string m_name;
+
+public:
+    Component(const std::string& name) : m_name{name} {
+        std::cout << "  Component '" << m_name << "' constructed\n";
+    }
+    
+    ~Component() {
+        std::cout << "  Component '" << m_name << "' destroyed\n";
+    }
+    
+    const std::string& getName() const { return m_name; }
+};
+
+class Vehicle {
+protected:
+    std::string m_model;
+    Component m_engine;   // Member object constructed first
+
+public:
+    Vehicle(const std::string& model) : m_model{model}, m_engine{"Engine"} {
+        std::cout << "Vehicle '" << m_model << "' constructed\n";
+    }
+    
+    ~Vehicle() {
+        std::cout << "Vehicle '" << m_model << "' destroyed\n";
+    }
+    
+    void start() const {
+        std::cout << m_model << " engine starting...\n";
+    }
+};
+
+class Car : public Vehicle {
+private:
+    Component m_radio;    // Derived class members constructed after base
+    int m_doors;
+
+public:
+    Car(const std::string& model, int doors) 
+        : Vehicle{model}, m_radio{"Radio"}, m_doors{doors} {
+        std::cout << "Car with " << m_doors << " doors constructed\n";
+    }
+    
+    ~Car() {
+        std::cout << "Car destroyed\n";
+        // Destruction order: derived members, then base class
+    }
+    
+    void playMusic() const {
+        std::cout << "Playing music on " << m_radio.getName() << '\n';
+    }
+};
+
+int main() {
+    std::cout << "=== Construction Order ===\n";
+    {
+        Car sedan{"Toyota Camry", 4};
+        std::cout << "\n=== Using the car ===\n";
+        sedan.start();      // Inherited method
+        sedan.playMusic();  // Derived method
+        std::cout << "\n=== Destruction Order ===\n";
+    } // Car destructor called here
+    
+    return 0;
+}
+```
+
+### 16.3 - Inheritance and Access Specifiers
+
+```cpp
+#include <iostream>
+#include <string>
+
+class BaseClass {
+public:
+    int m_publicMember = 1;
+
+protected:
+    int m_protectedMember = 2;
+
+private:
+    int m_privateMember = 3;
+
+public:
+    void publicFunction() {
+        std::cout << "Base public function\n";
+        // Can access all members within the class
+        std::cout << "Public: " << m_publicMember << '\n';
+        std::cout << "Protected: " << m_protectedMember << '\n';
+        std::cout << "Private: " << m_privateMember << '\n';
+    }
+
+protected:
+    void protectedFunction() {
+        std::cout << "Base protected function\n";
+    }
+
+private:
+    void privateFunction() {
+        std::cout << "Base private function\n";
+    }
+};
+
+// Public inheritance: maintains access levels
+class PublicDerived : public BaseClass {
+public:
+    void testAccess() {
+        std::cout << "=== Public Inheritance Access ===\n";
+        
+        // ✅ Can access public members
+        m_publicMember = 10;
+        publicFunction();
+        
+        // ✅ Can access protected members
+        m_protectedMember = 20;
+        protectedFunction();
+        
+        // ❌ Cannot access private members
+        // m_privateMember = 30;     // Error
+        // privateFunction();        // Error
+        
+        std::cout << "Public: " << m_publicMember << '\n';
+        std::cout << "Protected: " << m_protectedMember << '\n';
+    }
+};
+
+// Protected inheritance: public becomes protected
+class ProtectedDerived : protected BaseClass {
+public:
+    void testAccess() {
+        std::cout << "=== Protected Inheritance Access ===\n";
+        
+        // ✅ Can access public members (now protected in derived)
+        m_publicMember = 100;
+        publicFunction();
+        
+        // ✅ Can access protected members
+        m_protectedMember = 200;
+        protectedFunction();
+        
+        std::cout << "Public (now protected): " << m_publicMember << '\n';
+        std::cout << "Protected: " << m_protectedMember << '\n';
+    }
+};
+
+// Private inheritance: public and protected become private
+class PrivateDerived : private BaseClass {
+public:
+    void testAccess() {
+        std::cout << "=== Private Inheritance Access ===\n";
+        
+        // ✅ Can access public members (now private in derived)
+        m_publicMember = 1000;
+        publicFunction();
+        
+        // ✅ Can access protected members (now private in derived)
+        m_protectedMember = 2000;
+        protectedFunction();
+        
+        std::cout << "Public (now private): " << m_publicMember << '\n';
+        std::cout << "Protected (now private): " << m_protectedMember << '\n';
+    }
+    
+    // Expose base functionality through wrapper
+    void callBasePublicFunction() {
+        publicFunction();  // Can access internally
+    }
+};
+
+int main() {
+    PublicDerived pubDerived;
+    pubDerived.testAccess();
+    pubDerived.publicFunction();  // ✅ Still public
+    // pubDerived.protectedFunction();  // ❌ Error: protected
+    
+    std::cout << '\n';
+    
+    ProtectedDerived protDerived;
+    protDerived.testAccess();
+    // protDerived.publicFunction();  // ❌ Error: now protected
+    
+    std::cout << '\n';
+    
+    PrivateDerived privDerived;
+    privDerived.testAccess();
+    // privDerived.publicFunction();  // ❌ Error: now private
+    privDerived.callBasePublicFunction();  // ✅ Wrapped access
+    
+    return 0;
+}
+```
+
+### 16.4 - Adding New Functionality in Derived Classes
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+
+// Base class for all employees
+class Employee {
+protected:
+    std::string m_name;
+    int m_employeeId;
+    double m_baseSalary;
+
+public:
+    Employee(const std::string& name, int id, double baseSalary)
+        : m_name{name}, m_employeeId{id}, m_baseSalary{baseSalary} {}
+    
+    virtual ~Employee() = default;  // Virtual destructor for proper cleanup
+    
+    const std::string& getName() const { return m_name; }
+    int getId() const { return m_employeeId; }
+    double getBaseSalary() const { return m_baseSalary; }
+    
+    virtual double calculatePay() const {
+        return m_baseSalary;
+    }
+    
+    virtual void displayInfo() const {
+        std::cout << "Employee: " << m_name << " (ID: " << m_employeeId 
+                  << ", Base: $" << m_baseSalary << ")\n";
+    }
+};
+
+// Developer with additional programming skills
+class Developer : public Employee {
+private:
+    std::vector<std::string> m_programmingLanguages;
+    int m_yearsExperience;
+    double m_bonusRate;
+
+public:
+    Developer(const std::string& name, int id, double baseSalary, 
+              int yearsExp, double bonusRate = 0.1)
+        : Employee{name, id, baseSalary}, m_yearsExperience{yearsExp}, 
+          m_bonusRate{bonusRate} {}
+    
+    // Add new functionality
+    void addProgrammingLanguage(const std::string& language) {
+        m_programmingLanguages.push_back(language);
+    }
+    
+    const std::vector<std::string>& getProgrammingLanguages() const {
+        return m_programmingLanguages;
+    }
+    
+    int getYearsExperience() const { return m_yearsExperience; }
+    
+    // Override base class methods with enhanced functionality
+    double calculatePay() const override {
+        double experienceBonus = m_yearsExperience * 1000.0;
+        double languageBonus = m_programmingLanguages.size() * 500.0;
+        return m_baseSalary + experienceBonus + languageBonus;
+    }
+    
+    void displayInfo() const override {
+        std::cout << "Developer: " << m_name << " (ID: " << m_employeeId << ")\n";
+        std::cout << "  Base Salary: $" << m_baseSalary << '\n';
+        std::cout << "  Experience: " << m_yearsExperience << " years\n";
+        std::cout << "  Languages: ";
+        for (size_t i = 0; i < m_programmingLanguages.size(); ++i) {
+            std::cout << m_programmingLanguages[i];
+            if (i < m_programmingLanguages.size() - 1) std::cout << ", ";
+        }
+        std::cout << "\n  Total Pay: $" << calculatePay() << '\n';
+    }
+    
+    // New methods specific to developers
+    void codeReview() const {
+        std::cout << m_name << " is conducting a code review\n";
+    }
+    
+    void debugCode() const {
+        std::cout << m_name << " is debugging code\n";
+    }
+};
+
+// Manager with team management capabilities
+class Manager : public Employee {
+private:
+    std::vector<Employee*> m_team;
+    double m_teamBonusRate;
+
+public:
+    Manager(const std::string& name, int id, double baseSalary, double teamBonusRate = 0.05)
+        : Employee{name, id, baseSalary}, m_teamBonusRate{teamBonusRate} {}
+    
+    // Team management functionality
+    void addTeamMember(Employee* employee) {
+        m_team.push_back(employee);
+    }
+    
+    void removeTeamMember(int employeeId) {
+        m_team.erase(
+            std::remove_if(m_team.begin(), m_team.end(),
+                [employeeId](Employee* emp) { return emp->getId() == employeeId; }),
+            m_team.end()
+        );
+    }
+    
+    size_t getTeamSize() const { return m_team.size(); }
+    
+    const std::vector<Employee*>& getTeam() const { return m_team; }
+    
+    // Override with team-based bonus calculation
+    double calculatePay() const override {
+        double teamBonus = m_team.size() * 2000.0 * m_teamBonusRate;
+        return m_baseSalary + teamBonus;
+    }
+    
+    void displayInfo() const override {
+        std::cout << "Manager: " << m_name << " (ID: " << m_employeeId << ")\n";
+        std::cout << "  Base Salary: $" << m_baseSalary << '\n';
+        std::cout << "  Team Size: " << m_team.size() << " members\n";
+        std::cout << "  Total Pay: $" << calculatePay() << '\n';
+    }
+    
+    // Manager-specific methods
+    void conductMeeting() const {
+        std::cout << m_name << " is conducting a team meeting with " 
+                  << m_team.size() << " members\n";
+    }
+    
+    void reviewPerformance(Employee* employee) const {
+        std::cout << m_name << " is reviewing performance of " 
+                  << employee->getName() << '\n';
+    }
+    
+    void displayTeam() const {
+        std::cout << "Team managed by " << m_name << ":\n";
+        for (const Employee* emp : m_team) {
+            std::cout << "  - " << emp->getName() << " (ID: " << emp->getId() << ")\n";
+        }
+    }
+};
+
+int main() {
+    // Create different types of employees
+    Developer alice{"Alice Johnson", 1001, 75000, 5, 0.15};
+    alice.addProgrammingLanguage("C++");
+    alice.addProgrammingLanguage("Python");
+    alice.addProgrammingLanguage("JavaScript");
+    
+    Developer bob{"Bob Smith", 1002, 70000, 3};
+    bob.addProgrammingLanguage("Java");
+    bob.addProgrammingLanguage("C#");
+    
+    Manager charlie{"Charlie Brown", 2001, 90000, 0.08};
+    
+    // Build team relationship
+    charlie.addTeamMember(&alice);
+    charlie.addTeamMember(&bob);
+    
+    std::cout << "=== Employee Information ===\n";
+    alice.displayInfo();
+    std::cout << '\n';
+    bob.displayInfo();
+    std::cout << '\n';
+    charlie.displayInfo();
+    
+    std::cout << "\n=== Demonstrating additional functionality ===\n";
+    alice.codeReview();
+    alice.debugCode();
+    
+    charlie.conductMeeting();
+    charlie.reviewPerformance(&alice);
+    charlie.displayTeam();
+    
+    return 0;
+}
+```
+
+---
+
+## Chapter 17: Virtual Functions and Polymorphism
+
+### 17.1 - Pointers and References to the Base Class
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <memory>
+
+class Shape {
+protected:
+    std::string m_name;
+    std::string m_color;
+
+public:
+    Shape(const std::string& name, const std::string& color)
+        : m_name{name}, m_color{color} {}
+    
+    virtual ~Shape() = default;  // Virtual destructor
+    
+    // Non-virtual functions - early binding (compile-time)
+    const std::string& getName() const { return m_name; }
+    const std::string& getColor() const { return m_color; }
+    
+    void setColor(const std::string& color) { m_color = color; }
+    
+    // Virtual functions - late binding (runtime)
+    virtual double getArea() const = 0;        // Pure virtual - abstract
+    virtual double getPerimeter() const = 0;   // Pure virtual - abstract
+    
+    virtual void draw() const {
+        std::cout << "Drawing a " << m_color << " " << m_name << '\n';
+    }
+    
+    virtual void displayInfo() const {
+        std::cout << m_name << " (" << m_color << ") - Area: " << getArea() 
+                  << ", Perimeter: " << getPerimeter() << '\n';
+    }
+};
+
+class Circle : public Shape {
+private:
+    double m_radius;
+
+public:
+    Circle(double radius, const std::string& color = "red")
+        : Shape{"Circle", color}, m_radius{radius} {}
+    
+    double getRadius() const { return m_radius; }
+    void setRadius(double radius) { m_radius = radius; }
+    
+    // Override virtual functions
+    double getArea() const override {
+        return 3.14159 * m_radius * m_radius;
+    }
+    
+    double getPerimeter() const override {
+        return 2 * 3.14159 * m_radius;
+    }
+    
+    void draw() const override {
+        std::cout << "Drawing a " << m_color << " circle with radius " << m_radius << '\n';
+    }
+};
+
+class Rectangle : public Shape {
+private:
+    double m_width, m_height;
+
+public:
+    Rectangle(double width, double height, const std::string& color = "blue")
+        : Shape{"Rectangle", color}, m_width{width}, m_height{height} {}
+    
+    double getWidth() const { return m_width; }
+    double getHeight() const { return m_height; }
+    
+    double getArea() const override {
+        return m_width * m_height;
+    }
+    
+    double getPerimeter() const override {
+        return 2 * (m_width + m_height);
+    }
+    
+    void draw() const override {
+        std::cout << "Drawing a " << m_color << " rectangle " 
+                  << m_width << "x" << m_height << '\n';
+    }
+};
+
+class Triangle : public Shape {
+private:
+    double m_base, m_height, m_side1, m_side2;
+
+public:
+    Triangle(double base, double height, double side1, double side2, 
+             const std::string& color = "green")
+        : Shape{"Triangle", color}, m_base{base}, m_height{height}, 
+          m_side1{side1}, m_side2{side2} {}
+    
+    double getArea() const override {
+        return 0.5 * m_base * m_height;
+    }
+    
+    double getPerimeter() const override {
+        return m_base + m_side1 + m_side2;
+    }
+    
+    void draw() const override {
+        std::cout << "Drawing a " << m_color << " triangle with base " 
+                  << m_base << " and height " << m_height << '\n';
+    }
+};
+
+// Function that works with any Shape through polymorphism
+void processShape(const Shape& shape) {
+    shape.displayInfo();  // Calls appropriate derived version
+    shape.draw();         // Calls appropriate derived version
+}
+
+void processShapePointer(const Shape* shape) {
+    if (shape) {
+        shape->displayInfo();  // Polymorphic call
+        shape->draw();         // Polymorphic call
+    }
+}
+
+int main() {
+    // Create different shapes
+    Circle circle{5.0, "red"};
+    Rectangle rect{4.0, 6.0, "blue"};
+    Triangle triangle{3.0, 4.0, 5.0, 5.0, "green"};
+    
+    std::cout << "=== Direct object usage ===\n";
+    circle.displayInfo();
+    rect.displayInfo();
+    triangle.displayInfo();
+    
+    std::cout << "\n=== Polymorphism with references ===\n";
+    processShape(circle);    // Shape& refers to Circle
+    processShape(rect);      // Shape& refers to Rectangle
+    processShape(triangle);  // Shape& refers to Triangle
+    
+    std::cout << "\n=== Polymorphism with pointers ===\n";
+    Shape* shapes[] = {&circle, &rect, &triangle};
+    
+    for (int i = 0; i < 3; ++i) {
+        std::cout << "Shape " << (i + 1) << ": ";
+        processShapePointer(shapes[i]);
+        std::cout << '\n';
+    }
+    
+    std::cout << "\n=== Dynamic polymorphism with smart pointers ===\n";
+    std::vector<std::unique_ptr<Shape>> shapeCollection;
+    shapeCollection.push_back(std::make_unique<Circle>(3.0, "yellow"));
+    shapeCollection.push_back(std::make_unique<Rectangle>(2.0, 8.0, "purple"));
+    shapeCollection.push_back(std::make_unique<Triangle>(6.0, 8.0, 10.0, 10.0, "orange"));
+    
+    double totalArea = 0.0;
+    for (const auto& shape : shapeCollection) {
+        shape->displayInfo();
+        totalArea += shape->getArea();  // Polymorphic call to correct getArea()
+    }
+    
+    std::cout << "Total area of all shapes: " << totalArea << '\n';
+    
+    return 0;
+}
+```
+
+### 17.2 - Virtual Functions and Polymorphism
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <string>
+
+// Abstract base class for all game entities
+class GameEntity {
+protected:
+    std::string m_name;
+    double m_x, m_y;
+    int m_health;
+    bool m_isActive;
+
+public:
+    GameEntity(const std::string& name, double x = 0.0, double y = 0.0, int health = 100)
+        : m_name{name}, m_x{x}, m_y{y}, m_health{health}, m_isActive{true} {}
+    
+    virtual ~GameEntity() = default;
+    
+    // Non-virtual interface
+    const std::string& getName() const { return m_name; }
+    double getX() const { return m_x; }
+    double getY() const { return m_y; }
+    int getHealth() const { return m_health; }
+    bool isActive() const { return m_isActive; }
+    bool isAlive() const { return m_health > 0; }
+    
+    void setPosition(double x, double y) { m_x = x; m_y = y; }
+    void setActive(bool active) { m_isActive = active; }
+    
+    // Virtual interface - polymorphic behavior
+    virtual void update(double deltaTime) = 0;  // Pure virtual
+    virtual void render() const = 0;            // Pure virtual
+    virtual void takeDamage(int damage) {       // Virtual with default implementation
+        m_health -= damage;
+        if (m_health <= 0) {
+            m_health = 0;
+            m_isActive = false;
+            onDeath();
+        }
+    }
+    
+    virtual void onDeath() {
+        std::cout << m_name << " has died!\n";
+    }
+    
+    virtual void displayStats() const {
+        std::cout << m_name << " at (" << m_x << ", " << m_y 
+                  << ") Health: " << m_health << '\n';
+    }
+};
+
+class Player : public GameEntity {
+private:
+    int m_score;
+    double m_speed;
+    int m_ammo;
+
+public:
+    Player(const std::string& name, double x = 0.0, double y = 0.0)
+        : GameEntity{name, x, y, 100}, m_score{0}, m_speed{5.0}, m_ammo{30} {}
+    
+    int getScore() const { return m_score; }
+    int getAmmo() const { return m_ammo; }
+    
+    void addScore(int points) { m_score += points; }
+    
+    void reload() { 
+        m_ammo = 30; 
+        std::cout << m_name << " reloaded! Ammo: " << m_ammo << '\n';
+    }
+    
+    bool shoot() {
+        if (m_ammo > 0) {
+            --m_ammo;
+            std::cout << m_name << " shoots! Ammo remaining: " << m_ammo << '\n';
+            return true;
+        }
+        std::cout << m_name << " is out of ammo!\n";
+        return false;
+    }
+    
+    // Override virtual functions
+    void update(double deltaTime) override {
+        // Player movement logic (simplified)
+        // In real game, would handle input here
+        std::cout << m_name << " player update (deltaTime: " << deltaTime << ")\n";
+    }
+    
+    void render() const override {
+        std::cout << "Rendering player " << m_name << " at (" << m_x << ", " << m_y << ")\n";
+    }
+    
+    void takeDamage(int damage) override {
+        std::cout << m_name << " takes " << damage << " damage!\n";
+        GameEntity::takeDamage(damage);  // Call base implementation
+    }
+    
+    void onDeath() override {
+        std::cout << "GAME OVER! " << m_name << " died with score: " << m_score << '\n';
+    }
+    
+    void displayStats() const override {
+        GameEntity::displayStats();
+        std::cout << "  Score: " << m_score << ", Ammo: " << m_ammo << '\n';
+    }
+};
+
+class Enemy : public GameEntity {
+private:
+    double m_speed;
+    int m_damage;
+    double m_attackRange;
+    GameEntity* m_target;
+
+public:
+    Enemy(const std::string& name, double x, double y, int health = 50, 
+          int damage = 10, double attackRange = 2.0)
+        : GameEntity{name, x, y, health}, m_speed{2.0}, m_damage{damage}, 
+          m_attackRange{attackRange}, m_target{nullptr} {}
+    
+    void setTarget(GameEntity* target) { m_target = target; }
+    int getDamage() const { return m_damage; }
+    
+    double distanceToTarget() const {
+        if (!m_target) return std::numeric_limits<double>::max();
+        double dx = m_target->getX() - m_x;
+        double dy = m_target->getY() - m_y;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+    
+    bool canAttackTarget() const {
+        return m_target && m_target->isAlive() && distanceToTarget() <= m_attackRange;
+    }
+    
+    void update(double deltaTime) override {
+        if (!m_target || !m_target->isAlive()) {
+            std::cout << m_name << " has no target\n";
+            return;
+        }
+        
+        double distance = distanceToTarget();
+        
+        if (distance <= m_attackRange) {
+            // Attack target
+            std::cout << m_name << " attacks " << m_target->getName() << "!\n";
+            m_target->takeDamage(m_damage);
+        } else {
+            // Move towards target (simplified)
+            double dx = m_target->getX() - m_x;
+            double dy = m_target->getY() - m_y;
+            double length = std::sqrt(dx * dx + dy * dy);
             
-            price_groups[category].push_back(p);
-        });
-    
-    for (const auto& [category, products] : price_groups) {
-        std::cout << category << " products: " << products.size() << "\n";
-    }
-}
-```
-
-### Advanced Lambda Features
-
-```cpp
-#include <iostream>
-#include <functional>
-#include <vector>
-#include <memory>
-
-// Recursive lambda (C++14 with auto)
-void recursiveLambda() {
-    std::function<int(int)> factorial = [&factorial](int n) -> int {
-        return (n <= 1) ? 1 : n * factorial(n - 1);
-    };
-    
-    std::cout << "5! = " << factorial(5) << "\n";
-    
-    // Y combinator style recursive lambda
-    auto make_recursive = [](auto f) {
-        return [f](auto&&... args) {
-            return f(f, std::forward<decltype(args)>(args)...);
-        };
-    };
-    
-    auto fib = make_recursive([](auto f, int n) -> int {
-        return (n <= 1) ? n : f(f, n-1) + f(f, n-2);
-    });
-    
-    std::cout << "fib(10) = " << fib(10) << "\n";
-}
-
-// Lambda as template parameter
-template<typename Container, typename Predicate>
-auto filter(const Container& container, Predicate pred) {
-    Container result;
-    std::copy_if(container.begin(), container.end(), std::back_inserter(result), pred);
-    return result;
-}
-
-// Higher-order functions
-template<typename F>
-auto curry(F&& f) {
-    return [f = std::forward<F>(f)](auto&& arg1) {
-        return [f, arg1 = std::forward<decltype(arg1)>(arg1)](auto&& arg2) {
-            return f(arg1, std::forward<decltype(arg2)>(arg2));
-        };
-    };
-}
-
-void advancedLambdaFeatures() {
-    // Lambda templates (C++20)
-    auto generic_lambda = []<typename T>(T&& value) {
-        std::cout << "Processing: " << value << " of type " << typeid(T).name() << "\n";
-        return std::forward<T>(value);
-    };
-    
-    generic_lambda(42);
-    generic_lambda("Hello");
-    
-    // Using lambdas with custom algorithms
-    std::vector<int> numbers = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    auto evens = filter(numbers, [](int n) { return n % 2 == 0; });
-    
-    std::cout << "Even numbers: ";
-    for (int n : evens) {
-        std::cout << n << " ";
-    }
-    std::cout << "\n";
-    
-    // Currying example
-    auto add = [](int a, int b) { return a + b; };
-    auto curried_add = curry(add);
-    auto add_five = curried_add(5);
-    
-    std::cout << "5 + 3 = " << add_five(3) << "\n";
-}
-
-// Lambda in class context
-class EventHandler {
-private:
-    std::vector<std::function<void()>> handlers_;
-    
-public:
-    void addHandler(std::function<void()> handler) {
-        handlers_.push_back(handler);
+            if (length > 0) {
+                dx /= length;  // Normalize
+                dy /= length;
+                
+                m_x += dx * m_speed * deltaTime;
+                m_y += dy * m_speed * deltaTime;
+                
+                std::cout << m_name << " moves toward " << m_target->getName() 
+                          << " to (" << m_x << ", " << m_y << ")\n";
+            }
+        }
     }
     
-    void processEvents() {
-        for (auto& handler : handlers_) {
-            handler();
+    void render() const override {
+        std::cout << "Rendering enemy " << m_name << " at (" << m_x << ", " << m_y << ")\n";
+    }
+    
+    void onDeath() override {
+        std::cout << m_name << " enemy defeated!\n";
+        if (m_target) {
+            // Give points to player if target is player
+            Player* player = dynamic_cast<Player*>(m_target);
+            if (player) {
+                player->addScore(100);
+                std::cout << "Player gained 100 points!\n";
+            }
         }
     }
 };
 
-void lambdaInClassContext() {
-    EventHandler eventSystem;
-    
-    std::string message = "Event processed";
-    int counter = 0;
-    
-    // Lambda capturing class context
-    eventSystem.addHandler([&message, &counter]() {
-        std::cout << message << " #" << ++counter << "\n";
-    });
-    
-    eventSystem.addHandler([]() {
-        std::cout << "Another event handler\n";
-    });
-    
-    eventSystem.processEvents();
-    eventSystem.processEvents();
-}
-```
+class PowerUp : public GameEntity {
+private:
+    std::string m_powerType;
+    int m_value;
 
----
-
-## 26.1 - Advanced Template Programming
-
-### Variadic Templates
-
-```cpp
-#include <iostream>
-#include <string>
-#include <sstream>
-#include <type_traits>
-
-// Basic variadic template
-template<typename... Args>
-void print(Args&&... args) {
-    ((std::cout << args << " "), ...);  // C++17 fold expression
-    std::cout << "\n";
-}
-
-// Recursive variadic template (pre-C++17 style)
-template<typename First>
-void print_recursive(First&& first) {
-    std::cout << first << "\n";
-}
-
-template<typename First, typename... Rest>
-void print_recursive(First&& first, Rest&&... rest) {
-    std::cout << first << " ";
-    print_recursive(rest...);
-}
-
-// Perfect forwarding with variadic templates
-template<typename T, typename... Args>
-std::unique_ptr<T> make_unique_variadic(Args&&... args) {
-    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
-
-class ComplexObject {
 public:
-    ComplexObject(const std::string& name, int value, double rate) 
-        : name_(name), value_(value), rate_(rate) {
-        std::cout << "ComplexObject created: " << name_ << "\n";
+    PowerUp(const std::string& powerType, double x, double y, int value = 50)
+        : GameEntity{"PowerUp", x, y, 1}, m_powerType{powerType}, m_value{value} {}
+    
+    const std::string& getPowerType() const { return m_powerType; }
+    int getValue() const { return m_value; }
+    
+    void applyTo(Player* player) {
+        if (m_powerType == "Health") {
+            // Heal player (would need to add healing method to GameEntity)
+            std::cout << "Health powerup applied to " << player->getName() << "!\n";
+        } else if (m_powerType == "Ammo") {
+            player->reload();
+            std::cout << "Ammo powerup applied to " << player->getName() << "!\n";
+        } else if (m_powerType == "Score") {
+            player->addScore(m_value);
+            std::cout << "Score powerup +" << m_value << " applied to " 
+                      << player->getName() << "!\n";
+        }
+        m_isActive = false;  // Consumed
     }
     
-private:
-    std::string name_;
-    int value_;
-    double rate_;
+    void update(double deltaTime) override {
+        // Simple floating animation
+        static double time = 0;
+        time += deltaTime;
+        std::cout << m_powerType << " powerup floating (time: " << time << ")\n";
+    }
+    
+    void render() const override {
+        std::cout << "Rendering " << m_powerType << " powerup at (" 
+                  << m_x << ", " << m_y << ")\n";
+    }
 };
 
-// Variadic template for string formatting
-template<typename... Args>
-std::string format_string(const std::string& format, Args&&... args) {
-    std::ostringstream oss;
-    format_impl(oss, format, std::forward<Args>(args)...);
-    return oss.str();
-}
+// Game engine that manages entities polymorphically
+class GameEngine {
+private:
+    std::vector<std::unique_ptr<GameEntity>> m_entities;
 
-template<typename T>
-void format_impl(std::ostringstream& oss, const std::string& format, T&& value) {
-    size_t pos = format.find("{}");
-    if (pos != std::string::npos) {
-        oss << format.substr(0, pos) << value << format.substr(pos + 2);
-    } else {
-        oss << format;
+public:
+    void addEntity(std::unique_ptr<GameEntity> entity) {
+        m_entities.push_back(std::move(entity));
     }
-}
-
-template<typename T, typename... Args>
-void format_impl(std::ostringstream& oss, const std::string& format, T&& value, Args&&... args) {
-    size_t pos = format.find("{}");
-    if (pos != std::string::npos) {
-        oss << format.substr(0, pos) << value;
-        format_impl(oss, format.substr(pos + 2), std::forward<Args>(args)...);
-    } else {
-        oss << format;
+    
+    void update(double deltaTime) {
+        std::cout << "=== Game Update (deltaTime: " << deltaTime << ") ===\n";
+        
+        // Update all entities polymorphically
+        for (auto& entity : m_entities) {
+            if (entity->isActive()) {
+                entity->update(deltaTime);
+            }
+        }
+        
+        // Remove inactive entities
+        m_entities.erase(
+            std::remove_if(m_entities.begin(), m_entities.end(),
+                [](const std::unique_ptr<GameEntity>& entity) {
+                    return !entity->isActive();
+                }),
+            m_entities.end()
+        );
     }
-}
-
-void demonstrateVariadicTemplates() {
-    // Basic usage
-    print("Hello", "World", 42, 3.14, true);
-    print_recursive("Recursive:", 1, 2, 3);
     
-    // Perfect forwarding
-    auto obj = make_unique_variadic<ComplexObject>("Test", 100, 2.5);
-    
-    // String formatting
-    std::string result = format_string("Value: {}, Rate: {}, Active: {}", 42, 3.14, true);
-    std::cout << result << "\n";
-}
-```
-
-### SFINAE and Template Metaprogramming
-
-```cpp
-#include <iostream>
-#include <type_traits>
-#include <vector>
-#include <string>
-
-// SFINAE (Substitution Failure Is Not An Error) examples
-
-// Enable function only for integral types
-template<typename T>
-std::enable_if_t<std::is_integral_v<T>, void>
-process_integral(T value) {
-    std::cout << "Processing integral value: " << value << "\n";
-}
-
-// Enable function only for floating point types
-template<typename T>
-std::enable_if_t<std::is_floating_point_v<T>, void>
-process_floating_point(T value) {
-    std::cout << "Processing floating point value: " << value << "\n";
-}
-
-// Detect if a type has a specific member function
-template<typename T, typename = void>
-struct has_size : std::false_type {};
-
-template<typename T>
-struct has_size<T, std::void_t<decltype(std::declval<T>().size())>> : std::true_type {};
-
-template<typename T>
-constexpr bool has_size_v = has_size<T>::value;
-
-// Function overloading based on type traits
-template<typename Container>
-std::enable_if_t<has_size_v<Container>, size_t>
-get_size(const Container& container) {
-    return container.size();
-}
-
-template<typename T>
-std::enable_if_t<!has_size_v<T>, size_t>
-get_size(const T&) {
-    return 1;  // Assume single element for non-containers
-}
-
-// if constexpr (C++17) - compile-time conditional
-template<typename T>
-void process_value(T value) {
-    if constexpr (std::is_integral_v<T>) {
-        std::cout << "Integral: " << value << " (squared: " << value * value << ")\n";
-    } else if constexpr (std::is_floating_point_v<T>) {
-        std::cout << "Float: " << value << " (sqrt: " << std::sqrt(value) << ")\n";
-    } else if constexpr (std::is_same_v<T, std::string>) {
-        std::cout << "String: '" << value << "' (length: " << value.length() << ")\n";
-    } else {
-        std::cout << "Other type\n";
+    void render() {
+        std::cout << "=== Game Render ===\n";
+        for (const auto& entity : m_entities) {
+            if (entity->isActive()) {
+                entity->render();
+            }
+        }
     }
-}
-
-void demonstrateSFINAE() {
-    // Type-based function selection
-    process_integral(42);
-    process_floating_point(3.14);
     
-    // Member detection
-    std::vector<int> vec = {1, 2, 3, 4, 5};
-    std::string str = "hello";
-    int single_value = 42;
-    
-    std::cout << "Vector size: " << get_size(vec) << "\n";
-    std::cout << "String size: " << get_size(str) << "\n";
-    std::cout << "Int 'size': " << get_size(single_value) << "\n";
-    
-    // if constexpr usage
-    process_value(42);
-    process_value(3.14);
-    process_value(std::string("Hello"));
-}
-```
-
-### Template Specialization and Concepts (C++20)
-
-```cpp
-#include <iostream>
-#include <vector>
-#include <concepts>
-#include <type_traits>
-
-// Template specialization
-template<typename T>
-class Container {
-public
+    void displayAll
 
 # Chapters 19-23: Templates, Operator Overloading & Advanced C++ Features
 
@@ -7840,5926 +12833,933 @@ The journey from basic C++ to these advanced features represents a significant l
 
 **Next: Advanced topics like concurrency, networking, or domain-specific applications**
 
-# Chapters 16-18: Comprehensive Object-Oriented Programming Guide
+# Chapters 24-28: Advanced C++ - Modern Language Features and Best Practices
 
-## From Basic Classes to Advanced OOP: Inheritance, Virtual Functions, and Polymorphism
+## Building on Fundamentals: Advanced C++ Programming
 
-Building on the foundation from Chapters 14-15, we now explore the advanced pillars of Object-Oriented Programming: **Inheritance** (Chapter 16), **Virtual Functions** (Chapter 17), and **Polymorphism** (Chapter 18). These concepts enable code reuse, extensibility, and elegant design patterns essential for large-scale software development.
+Having mastered classes, inheritance, and basic templates, we now explore the sophisticated features that make modern C++ a powerful and expressive language. These chapters cover advanced topics that professional C++ developers use daily to write efficient, maintainable, and robust code.
 
 ---
 
-## Chapter 16: Inheritance - Building Class Hierarchies
+## 24.1 - Smart Pointers: Automatic Memory Management
 
-### 16.1 - Introduction to Inheritance
+### The Problem with Raw Pointers
 
-Inheritance allows us to create new classes based on existing classes, promoting code reuse and establishing "is-a" relationships.
+Raw pointers create numerous pitfalls:
 
 ```cpp
-#include <iostream>
-#include <string>
+// Problematic raw pointer usage
+void problematicCode() {
+    int* data = new int[1000];  // Manual allocation
+    
+    // ... complex logic that might throw exceptions
+    
+    if (someCondition) {
+        return;  // ❌ Memory leak! Forgot to delete[]
+    }
+    
+    delete[] data;  // ❌ Only reached if no early return
+}
 
-// Base class (parent class)
-class Animal {
-protected:  // Accessible to derived classes, but not to external code
-    std::string m_name;
-    int m_age;
-
-public:
-    Animal(const std::string& name, int age) : m_name{name}, m_age{age} {
-        std::cout << "Animal constructor: " << m_name << '\n';
-    }
+void dangerousSharing() {
+    int* ptr = new int(42);
     
-    ~Animal() {
-        std::cout << "Animal destructor: " << m_name << '\n';
-    }
+    processData(ptr);    // Who owns ptr now?
+    delete ptr;          // ❌ Double delete if processData also deletes?
     
-    void eat() const {
-        std::cout << m_name << " is eating\n";
-    }
-    
-    void sleep() const {
-        std::cout << m_name << " is sleeping\n";
-    }
-    
-    const std::string& getName() const { return m_name; }
-    int getAge() const { return m_age; }
-    
-    void displayInfo() const {
-        std::cout << "Animal: " << m_name << ", Age: " << m_age << '\n';
-    }
-};
-
-// Derived class (child class) - inherits from Animal
-class Dog : public Animal {  // "public inheritance" - is-a relationship
-private:
-    std::string m_breed;
-
-public:
-    Dog(const std::string& name, int age, const std::string& breed)
-        : Animal{name, age}, m_breed{breed} {  // Call base class constructor
-        std::cout << "Dog constructor: " << m_name << '\n';
-    }
-    
-    ~Dog() {
-        std::cout << "Dog destructor: " << m_name << '\n';
-    }
-    
-    // Additional methods specific to Dog
-    void bark() const {
-        std::cout << m_name << " barks: Woof! Woof!\n";
-    }
-    
-    void wagTail() const {
-        std::cout << m_name << " wags tail happily\n";
-    }
-    
-    const std::string& getBreed() const { return m_breed; }
-    
-    // Override base class method with additional information
-    void displayInfo() const {
-        std::cout << "Dog: " << m_name << " (" << m_breed << "), Age: " << m_age << '\n';
-    }
-};
-
-class Cat : public Animal {
-private:
-    bool m_isIndoor;
-
-public:
-    Cat(const std::string& name, int age, bool isIndoor = true)
-        : Animal{name, age}, m_isIndoor{isIndoor} {
-        std::cout << "Cat constructor: " << m_name << '\n';
-    }
-    
-    ~Cat() {
-        std::cout << "Cat destructor: " << m_name << '\n';
-    }
-    
-    void meow() const {
-        std::cout << m_name << " meows: Meow! Meow!\n";
-    }
-    
-    void purr() const {
-        std::cout << m_name << " purrs contentedly\n";
-    }
-    
-    bool isIndoor() const { return m_isIndoor; }
-    
-    void displayInfo() const {
-        std::cout << "Cat: " << m_name << ", Age: " << m_age 
-                  << " (" << (m_isIndoor ? "Indoor" : "Outdoor") << ")\n";
-    }
-};
-
-int main() {
-    std::cout << "=== Creating Animals ===\n";
-    
-    Dog buddy{"Buddy", 3, "Golden Retriever"};
-    Cat whiskers{"Whiskers", 2, true};
-    
-    std::cout << "\n=== Using inherited methods ===\n";
-    buddy.eat();        // Inherited from Animal
-    buddy.sleep();      // Inherited from Animal
-    buddy.bark();       // Dog-specific method
-    buddy.wagTail();    // Dog-specific method
-    
-    whiskers.eat();     // Inherited from Animal
-    whiskers.sleep();   // Inherited from Animal
-    whiskers.meow();    // Cat-specific method
-    whiskers.purr();    // Cat-specific method
-    
-    std::cout << "\n=== Display information ===\n";
-    buddy.displayInfo();    // Dog's version
-    whiskers.displayInfo(); // Cat's version
-    
-    std::cout << "\n=== Destructors called automatically ===\n";
-    return 0;
-    // Destructors called in reverse order: derived, then base
+    *ptr = 100;          // ❌ Use after free!
 }
 ```
 
-### 16.2 - Order of Construction and Destruction
+### Smart Pointers: The Modern Solution
 
-Understanding the construction/destruction order is crucial for proper resource management:
+Smart pointers automatically manage memory and provide clear ownership semantics:
 
 ```cpp
+#include <memory>
 #include <iostream>
-#include <string>
+#include <vector>
 
-class Component {
+class Resource {
+public:
+    Resource(int value) : data_(value) {
+        std::cout << "Resource " << data_ << " created\n";
+    }
+    
+    ~Resource() {
+        std::cout << "Resource " << data_ << " destroyed\n";
+    }
+    
+    void use() const {
+        std::cout << "Using resource " << data_ << "\n";
+    }
+    
 private:
-    std::string m_name;
-
-public:
-    Component(const std::string& name) : m_name{name} {
-        std::cout << "  Component '" << m_name << "' constructed\n";
-    }
-    
-    ~Component() {
-        std::cout << "  Component '" << m_name << "' destroyed\n";
-    }
-    
-    const std::string& getName() const { return m_name; }
+    int data_;
 };
 
-class Vehicle {
-protected:
-    std::string m_model;
-    Component m_engine;   // Member object constructed first
-
-public:
-    Vehicle(const std::string& model) : m_model{model}, m_engine{"Engine"} {
-        std::cout << "Vehicle '" << m_model << "' constructed\n";
-    }
+void demonstrateSmartPointers() {
+    // unique_ptr: Exclusive ownership
+    std::unique_ptr<Resource> unique = std::make_unique<Resource>(1);
+    unique->use();
+    // Automatically deleted when unique goes out of scope
     
-    ~Vehicle() {
-        std::cout << "Vehicle '" << m_model << "' destroyed\n";
-    }
-    
-    void start() const {
-        std::cout << m_model << " engine starting...\n";
-    }
-};
-
-class Car : public Vehicle {
-private:
-    Component m_radio;    // Derived class members constructed after base
-    int m_doors;
-
-public:
-    Car(const std::string& model, int doors) 
-        : Vehicle{model}, m_radio{"Radio"}, m_doors{doors} {
-        std::cout << "Car with " << m_doors << " doors constructed\n";
-    }
-    
-    ~Car() {
-        std::cout << "Car destroyed\n";
-        // Destruction order: derived members, then base class
-    }
-    
-    void playMusic() const {
-        std::cout << "Playing music on " << m_radio.getName() << '\n';
-    }
-};
-
-int main() {
-    std::cout << "=== Construction Order ===\n";
+    // shared_ptr: Shared ownership
+    std::shared_ptr<Resource> shared1 = std::make_shared<Resource>(2);
     {
-        Car sedan{"Toyota Camry", 4};
-        std::cout << "\n=== Using the car ===\n";
-        sedan.start();      // Inherited method
-        sedan.playMusic();  // Derived method
-        std::cout << "\n=== Destruction Order ===\n";
-    } // Car destructor called here
-    
-    return 0;
+        std::shared_ptr<Resource> shared2 = shared1;  // Reference count: 2
+        shared2->use();
+    }  // shared2 destroyed, reference count: 1
+    shared1->use();  // Resource still alive
+    // Resource deleted when shared1 goes out of scope
 }
 ```
 
-### 16.3 - Inheritance and Access Specifiers
+### unique_ptr: Exclusive Ownership
 
 ```cpp
-#include <iostream>
-#include <string>
-
-class BaseClass {
-public:
-    int m_publicMember = 1;
-
-protected:
-    int m_protectedMember = 2;
-
-private:
-    int m_privateMember = 3;
-
-public:
-    void publicFunction() {
-        std::cout << "Base public function\n";
-        // Can access all members within the class
-        std::cout << "Public: " << m_publicMember << '\n';
-        std::cout << "Protected: " << m_protectedMember << '\n';
-        std::cout << "Private: " << m_privateMember << '\n';
-    }
-
-protected:
-    void protectedFunction() {
-        std::cout << "Base protected function\n";
-    }
-
-private:
-    void privateFunction() {
-        std::cout << "Base private function\n";
-    }
-};
-
-// Public inheritance: maintains access levels
-class PublicDerived : public BaseClass {
-public:
-    void testAccess() {
-        std::cout << "=== Public Inheritance Access ===\n";
-        
-        // ✅ Can access public members
-        m_publicMember = 10;
-        publicFunction();
-        
-        // ✅ Can access protected members
-        m_protectedMember = 20;
-        protectedFunction();
-        
-        // ❌ Cannot access private members
-        // m_privateMember = 30;     // Error
-        // privateFunction();        // Error
-        
-        std::cout << "Public: " << m_publicMember << '\n';
-        std::cout << "Protected: " << m_protectedMember << '\n';
-    }
-};
-
-// Protected inheritance: public becomes protected
-class ProtectedDerived : protected BaseClass {
-public:
-    void testAccess() {
-        std::cout << "=== Protected Inheritance Access ===\n";
-        
-        // ✅ Can access public members (now protected in derived)
-        m_publicMember = 100;
-        publicFunction();
-        
-        // ✅ Can access protected members
-        m_protectedMember = 200;
-        protectedFunction();
-        
-        std::cout << "Public (now protected): " << m_publicMember << '\n';
-        std::cout << "Protected: " << m_protectedMember << '\n';
-    }
-};
-
-// Private inheritance: public and protected become private
-class PrivateDerived : private BaseClass {
-public:
-    void testAccess() {
-        std::cout << "=== Private Inheritance Access ===\n";
-        
-        // ✅ Can access public members (now private in derived)
-        m_publicMember = 1000;
-        publicFunction();
-        
-        // ✅ Can access protected members (now private in derived)
-        m_protectedMember = 2000;
-        protectedFunction();
-        
-        std::cout << "Public (now private): " << m_publicMember << '\n';
-        std::cout << "Protected (now private): " << m_protectedMember << '\n';
-    }
-    
-    // Expose base functionality through wrapper
-    void callBasePublicFunction() {
-        publicFunction();  // Can access internally
-    }
-};
-
-int main() {
-    PublicDerived pubDerived;
-    pubDerived.testAccess();
-    pubDerived.publicFunction();  // ✅ Still public
-    // pubDerived.protectedFunction();  // ❌ Error: protected
-    
-    std::cout << '\n';
-    
-    ProtectedDerived protDerived;
-    protDerived.testAccess();
-    // protDerived.publicFunction();  // ❌ Error: now protected
-    
-    std::cout << '\n';
-    
-    PrivateDerived privDerived;
-    privDerived.testAccess();
-    // privDerived.publicFunction();  // ❌ Error: now private
-    privDerived.callBasePublicFunction();  // ✅ Wrapped access
-    
-    return 0;
-}
-```
-
-### 16.4 - Adding New Functionality in Derived Classes
-
-```cpp
-#include <iostream>
-#include <string>
-#include <vector>
-
-// Base class for all employees
-class Employee {
-protected:
-    std::string m_name;
-    int m_employeeId;
-    double m_baseSalary;
-
-public:
-    Employee(const std::string& name, int id, double baseSalary)
-        : m_name{name}, m_employeeId{id}, m_baseSalary{baseSalary} {}
-    
-    virtual ~Employee() = default;  // Virtual destructor for proper cleanup
-    
-    const std::string& getName() const { return m_name; }
-    int getId() const { return m_employeeId; }
-    double getBaseSalary() const { return m_baseSalary; }
-    
-    virtual double calculatePay() const {
-        return m_baseSalary;
-    }
-    
-    virtual void displayInfo() const {
-        std::cout << "Employee: " << m_name << " (ID: " << m_employeeId 
-                  << ", Base: $" << m_baseSalary << ")\n";
-    }
-};
-
-// Developer with additional programming skills
-class Developer : public Employee {
-private:
-    std::vector<std::string> m_programmingLanguages;
-    int m_yearsExperience;
-    double m_bonusRate;
-
-public:
-    Developer(const std::string& name, int id, double baseSalary, 
-              int yearsExp, double bonusRate = 0.1)
-        : Employee{name, id, baseSalary}, m_yearsExperience{yearsExp}, 
-          m_bonusRate{bonusRate} {}
-    
-    // Add new functionality
-    void addProgrammingLanguage(const std::string& language) {
-        m_programmingLanguages.push_back(language);
-    }
-    
-    const std::vector<std::string>& getProgrammingLanguages() const {
-        return m_programmingLanguages;
-    }
-    
-    int getYearsExperience() const { return m_yearsExperience; }
-    
-    // Override base class methods with enhanced functionality
-    double calculatePay() const override {
-        double experienceBonus = m_yearsExperience * 1000.0;
-        double languageBonus = m_programmingLanguages.size() * 500.0;
-        return m_baseSalary + experienceBonus + languageBonus;
-    }
-    
-    void displayInfo() const override {
-        std::cout << "Developer: " << m_name << " (ID: " << m_employeeId << ")\n";
-        std::cout << "  Base Salary: $" << m_baseSalary << '\n';
-        std::cout << "  Experience: " << m_yearsExperience << " years\n";
-        std::cout << "  Languages: ";
-        for (size_t i = 0; i < m_programmingLanguages.size(); ++i) {
-            std::cout << m_programmingLanguages[i];
-            if (i < m_programmingLanguages.size() - 1) std::cout << ", ";
-        }
-        std::cout << "\n  Total Pay: $" << calculatePay() << '\n';
-    }
-    
-    // New methods specific to developers
-    void codeReview() const {
-        std::cout << m_name << " is conducting a code review\n";
-    }
-    
-    void debugCode() const {
-        std::cout << m_name << " is debugging code\n";
-    }
-};
-
-// Manager with team management capabilities
-class Manager : public Employee {
-private:
-    std::vector<Employee*> m_team;
-    double m_teamBonusRate;
-
-public:
-    Manager(const std::string& name, int id, double baseSalary, double teamBonusRate = 0.05)
-        : Employee{name, id, baseSalary}, m_teamBonusRate{teamBonusRate} {}
-    
-    // Team management functionality
-    void addTeamMember(Employee* employee) {
-        m_team.push_back(employee);
-    }
-    
-    void removeTeamMember(int employeeId) {
-        m_team.erase(
-            std::remove_if(m_team.begin(), m_team.end(),
-                [employeeId](Employee* emp) { return emp->getId() == employeeId; }),
-            m_team.end()
-        );
-    }
-    
-    size_t getTeamSize() const { return m_team.size(); }
-    
-    const std::vector<Employee*>& getTeam() const { return m_team; }
-    
-    // Override with team-based bonus calculation
-    double calculatePay() const override {
-        double teamBonus = m_team.size() * 2000.0 * m_teamBonusRate;
-        return m_baseSalary + teamBonus;
-    }
-    
-    void displayInfo() const override {
-        std::cout << "Manager: " << m_name << " (ID: " << m_employeeId << ")\n";
-        std::cout << "  Base Salary: $" << m_baseSalary << '\n';
-        std::cout << "  Team Size: " << m_team.size() << " members\n";
-        std::cout << "  Total Pay: $" << calculatePay() << '\n';
-    }
-    
-    // Manager-specific methods
-    void conductMeeting() const {
-        std::cout << m_name << " is conducting a team meeting with " 
-                  << m_team.size() << " members\n";
-    }
-    
-    void reviewPerformance(Employee* employee) const {
-        std::cout << m_name << " is reviewing performance of " 
-                  << employee->getName() << '\n';
-    }
-    
-    void displayTeam() const {
-        std::cout << "Team managed by " << m_name << ":\n";
-        for (const Employee* emp : m_team) {
-            std::cout << "  - " << emp->getName() << " (ID: " << emp->getId() << ")\n";
-        }
-    }
-};
-
-int main() {
-    // Create different types of employees
-    Developer alice{"Alice Johnson", 1001, 75000, 5, 0.15};
-    alice.addProgrammingLanguage("C++");
-    alice.addProgrammingLanguage("Python");
-    alice.addProgrammingLanguage("JavaScript");
-    
-    Developer bob{"Bob Smith", 1002, 70000, 3};
-    bob.addProgrammingLanguage("Java");
-    bob.addProgrammingLanguage("C#");
-    
-    Manager charlie{"Charlie Brown", 2001, 90000, 0.08};
-    
-    // Build team relationship
-    charlie.addTeamMember(&alice);
-    charlie.addTeamMember(&bob);
-    
-    std::cout << "=== Employee Information ===\n";
-    alice.displayInfo();
-    std::cout << '\n';
-    bob.displayInfo();
-    std::cout << '\n';
-    charlie.displayInfo();
-    
-    std::cout << "\n=== Demonstrating additional functionality ===\n";
-    alice.codeReview();
-    alice.debugCode();
-    
-    charlie.conductMeeting();
-    charlie.reviewPerformance(&alice);
-    charlie.displayTeam();
-    
-    return 0;
-}
-```
-
----
-
-## Chapter 17: Virtual Functions and Polymorphism
-
-### 17.1 - Pointers and References to the Base Class
-
-```cpp
-#include <iostream>
-#include <vector>
 #include <memory>
-
-class Shape {
-protected:
-    std::string m_name;
-    std::string m_color;
-
-public:
-    Shape(const std::string& name, const std::string& color)
-        : m_name{name}, m_color{color} {}
-    
-    virtual ~Shape() = default;  // Virtual destructor
-    
-    // Non-virtual functions - early binding (compile-time)
-    const std::string& getName() const { return m_name; }
-    const std::string& getColor() const { return m_color; }
-    
-    void setColor(const std::string& color) { m_color = color; }
-    
-    // Virtual functions - late binding (runtime)
-    virtual double getArea() const = 0;        // Pure virtual - abstract
-    virtual double getPerimeter() const = 0;   // Pure virtual - abstract
-    
-    virtual void draw() const {
-        std::cout << "Drawing a " << m_color << " " << m_name << '\n';
-    }
-    
-    virtual void displayInfo() const {
-        std::cout << m_name << " (" << m_color << ") - Area: " << getArea() 
-                  << ", Perimeter: " << getPerimeter() << '\n';
-    }
-};
-
-class Circle : public Shape {
-private:
-    double m_radius;
-
-public:
-    Circle(double radius, const std::string& color = "red")
-        : Shape{"Circle", color}, m_radius{radius} {}
-    
-    double getRadius() const { return m_radius; }
-    void setRadius(double radius) { m_radius = radius; }
-    
-    // Override virtual functions
-    double getArea() const override {
-        return 3.14159 * m_radius * m_radius;
-    }
-    
-    double getPerimeter() const override {
-        return 2 * 3.14159 * m_radius;
-    }
-    
-    void draw() const override {
-        std::cout << "Drawing a " << m_color << " circle with radius " << m_radius << '\n';
-    }
-};
-
-class Rectangle : public Shape {
-private:
-    double m_width, m_height;
-
-public:
-    Rectangle(double width, double height, const std::string& color = "blue")
-        : Shape{"Rectangle", color}, m_width{width}, m_height{height} {}
-    
-    double getWidth() const { return m_width; }
-    double getHeight() const { return m_height; }
-    
-    double getArea() const override {
-        return m_width * m_height;
-    }
-    
-    double getPerimeter() const override {
-        return 2 * (m_width + m_height);
-    }
-    
-    void draw() const override {
-        std::cout << "Drawing a " << m_color << " rectangle " 
-                  << m_width << "x" << m_height << '\n';
-    }
-};
-
-class Triangle : public Shape {
-private:
-    double m_base, m_height, m_side1, m_side2;
-
-public:
-    Triangle(double base, double height, double side1, double side2, 
-             const std::string& color = "green")
-        : Shape{"Triangle", color}, m_base{base}, m_height{height}, 
-          m_side1{side1}, m_side2{side2} {}
-    
-    double getArea() const override {
-        return 0.5 * m_base * m_height;
-    }
-    
-    double getPerimeter() const override {
-        return m_base + m_side1 + m_side2;
-    }
-    
-    void draw() const override {
-        std::cout << "Drawing a " << m_color << " triangle with base " 
-                  << m_base << " and height " << m_height << '\n';
-    }
-};
-
-// Function that works with any Shape through polymorphism
-void processShape(const Shape& shape) {
-    shape.displayInfo();  // Calls appropriate derived version
-    shape.draw();         // Calls appropriate derived version
-}
-
-void processShapePointer(const Shape* shape) {
-    if (shape) {
-        shape->displayInfo();  // Polymorphic call
-        shape->draw();         // Polymorphic call
-    }
-}
-
-int main() {
-    // Create different shapes
-    Circle circle{5.0, "red"};
-    Rectangle rect{4.0, 6.0, "blue"};
-    Triangle triangle{3.0, 4.0, 5.0, 5.0, "green"};
-    
-    std::cout << "=== Direct object usage ===\n";
-    circle.displayInfo();
-    rect.displayInfo();
-    triangle.displayInfo();
-    
-    std::cout << "\n=== Polymorphism with references ===\n";
-    processShape(circle);    // Shape& refers to Circle
-    processShape(rect);      // Shape& refers to Rectangle
-    processShape(triangle);  // Shape& refers to Triangle
-    
-    std::cout << "\n=== Polymorphism with pointers ===\n";
-    Shape* shapes[] = {&circle, &rect, &triangle};
-    
-    for (int i = 0; i < 3; ++i) {
-        std::cout << "Shape " << (i + 1) << ": ";
-        processShapePointer(shapes[i]);
-        std::cout << '\n';
-    }
-    
-    std::cout << "\n=== Dynamic polymorphism with smart pointers ===\n";
-    std::vector<std::unique_ptr<Shape>> shapeCollection;
-    shapeCollection.push_back(std::make_unique<Circle>(3.0, "yellow"));
-    shapeCollection.push_back(std::make_unique<Rectangle>(2.0, 8.0, "purple"));
-    shapeCollection.push_back(std::make_unique<Triangle>(6.0, 8.0, 10.0, 10.0, "orange"));
-    
-    double totalArea = 0.0;
-    for (const auto& shape : shapeCollection) {
-        shape->displayInfo();
-        totalArea += shape->getArea();  // Polymorphic call to correct getArea()
-    }
-    
-    std::cout << "Total area of all shapes: " << totalArea << '\n';
-    
-    return 0;
-}
-```
-
-### 17.2 - Virtual Functions and Polymorphism
-
-```cpp
-#include <iostream>
 #include <vector>
-#include <memory>
-#include <string>
-
-// Abstract base class for all game entities
-class GameEntity {
-protected:
-    std::string m_name;
-    double m_x, m_y;
-    int m_health;
-    bool m_isActive;
-
-public:
-    GameEntity(const std::string& name, double x = 0.0, double y = 0.0, int health = 100)
-        : m_name{name}, m_x{x}, m_y{y}, m_health{health}, m_isActive{true} {}
-    
-    virtual ~GameEntity() = default;
-    
-    // Non-virtual interface
-    const std::string& getName() const { return m_name; }
-    double getX() const { return m_x; }
-    double getY() const { return m_y; }
-    int getHealth() const { return m_health; }
-    bool isActive() const { return m_isActive; }
-    bool isAlive() const { return m_health > 0; }
-    
-    void setPosition(double x, double y) { m_x = x; m_y = y; }
-    void setActive(bool active) { m_isActive = active; }
-    
-    // Virtual interface - polymorphic behavior
-    virtual void update(double deltaTime) = 0;  // Pure virtual
-    virtual void render() const = 0;            // Pure virtual
-    virtual void takeDamage(int damage) {       // Virtual with default implementation
-        m_health -= damage;
-        if (m_health <= 0) {
-            m_health = 0;
-            m_isActive = false;
-            onDeath();
-        }
-    }
-    
-    virtual void onDeath() {
-        std::cout << m_name << " has died!\n";
-    }
-    
-    virtual void displayStats() const {
-        std::cout << m_name << " at (" << m_x << ", " << m_y 
-                  << ") Health: " << m_health << '\n';
-    }
-};
-
-class Player : public GameEntity {
-private:
-    int m_score;
-    double m_speed;
-    int m_ammo;
-
-public:
-    Player(const std::string& name, double x = 0.0, double y = 0.0)
-        : GameEntity{name, x, y, 100}, m_score{0}, m_speed{5.0}, m_ammo{30} {}
-    
-    int getScore() const { return m_score; }
-    int getAmmo() const { return m_ammo; }
-    
-    void addScore(int points) { m_score += points; }
-    
-    void reload() { 
-        m_ammo = 30; 
-        std::cout << m_name << " reloaded! Ammo: " << m_ammo << '\n';
-    }
-    
-    bool shoot() {
-        if (m_ammo > 0) {
-            --m_ammo;
-            std::cout << m_name << " shoots! Ammo remaining: " << m_ammo << '\n';
-            return true;
-        }
-        std::cout << m_name << " is out of ammo!\n";
-        return false;
-    }
-    
-    // Override virtual functions
-    void update(double deltaTime) override {
-        // Player movement logic (simplified)
-        // In real game, would handle input here
-        std::cout << m_name << " player update (deltaTime: " << deltaTime << ")\n";
-    }
-    
-    void render() const override {
-        std::cout << "Rendering player " << m_name << " at (" << m_x << ", " << m_y << ")\n";
-    }
-    
-    void takeDamage(int damage) override {
-        std::cout << m_name << " takes " << damage << " damage!\n";
-        GameEntity::takeDamage(damage);  // Call base implementation
-    }
-    
-    void onDeath() override {
-        std::cout << "GAME OVER! " << m_name << " died with score: " << m_score << '\n';
-    }
-    
-    void displayStats() const override {
-        GameEntity::displayStats();
-        std::cout << "  Score: " << m_score << ", Ammo: " << m_ammo << '\n';
-    }
-};
-
-class Enemy : public GameEntity {
-private:
-    double m_speed;
-    int m_damage;
-    double m_attackRange;
-    GameEntity* m_target;
-
-public:
-    Enemy(const std::string& name, double x, double y, int health = 50, 
-          int damage = 10, double attackRange = 2.0)
-        : GameEntity{name, x, y, health}, m_speed{2.0}, m_damage{damage}, 
-          m_attackRange{attackRange}, m_target{nullptr} {}
-    
-    void setTarget(GameEntity* target) { m_target = target; }
-    int getDamage() const { return m_damage; }
-    
-    double distanceToTarget() const {
-        if (!m_target) return std::numeric_limits<double>::max();
-        double dx = m_target->getX() - m_x;
-        double dy = m_target->getY() - m_y;
-        return std::sqrt(dx * dx + dy * dy);
-    }
-    
-    bool canAttackTarget() const {
-        return m_target && m_target->isAlive() && distanceToTarget() <= m_attackRange;
-    }
-    
-    void update(double deltaTime) override {
-        if (!m_target || !m_target->isAlive()) {
-            std::cout << m_name << " has no target\n";
-            return;
-        }
-        
-        double distance = distanceToTarget();
-        
-        if (distance <= m_attackRange) {
-            // Attack target
-            std::cout << m_name << " attacks " << m_target->getName() << "!\n";
-            m_target->takeDamage(m_damage);
-        } else {
-            // Move towards target (simplified)
-            double dx = m_target->getX() - m_x;
-            double dy = m_target->getY() - m_y;
-            double length = std::sqrt(dx * dx + dy * dy);
-            
-            if (length > 0) {
-                dx /= length;  // Normalize
-                dy /= length;
-                
-                m_x += dx * m_speed * deltaTime;
-                m_y += dy * m_speed * deltaTime;
-                
-                std::cout << m_name << " moves toward " << m_target->getName() 
-                          << " to (" << m_x << ", " << m_y << ")\n";
-            }
-        }
-    }
-    
-    void render() const override {
-        std::cout << "Rendering enemy " << m_name << " at (" << m_x << ", " << m_y << ")\n";
-    }
-    
-    void onDeath() override {
-        std::cout << m_name << " enemy defeated!\n";
-        if (m_target) {
-            // Give points to player if target is player
-            Player* player = dynamic_cast<Player*>(m_target);
-            if (player) {
-                player->addScore(100);
-                std::cout << "Player gained 100 points!\n";
-            }
-        }
-    }
-};
-
-class PowerUp : public GameEntity {
-private:
-    std::string m_powerType;
-    int m_value;
-
-public:
-    PowerUp(const std::string& powerType, double x, double y, int value = 50)
-        : GameEntity{"PowerUp", x, y, 1}, m_powerType{powerType}, m_value{value} {}
-    
-    const std::string& getPowerType() const { return m_powerType; }
-    int getValue() const { return m_value; }
-    
-    void applyTo(Player* player) {
-        if (m_powerType == "Health") {
-            // Heal player (would need to add healing method to GameEntity)
-            std::cout << "Health powerup applied to " << player->getName() << "!\n";
-        } else if (m_powerType == "Ammo") {
-            player->reload();
-            std::cout << "Ammo powerup applied to " << player->getName() << "!\n";
-        } else if (m_powerType == "Score") {
-            player->addScore(m_value);
-            std::cout << "Score powerup +" << m_value << " applied to " 
-                      << player->getName() << "!\n";
-        }
-        m_isActive = false;  // Consumed
-    }
-    
-    void update(double deltaTime) override {
-        // Simple floating animation
-        static double time = 0;
-        time += deltaTime;
-        std::cout << m_powerType << " powerup floating (time: " << time << ")\n";
-    }
-    
-    void render() const override {
-        std::cout << "Rendering " << m_powerType << " powerup at (" 
-                  << m_x << ", " << m_y << ")\n";
-    }
-};
-
-// Game engine that manages entities polymorphically
-class GameEngine {
-private:
-    std::vector<std::unique_ptr<GameEntity>> m_entities;
-
-public:
-    void addEntity(std::unique_ptr<GameEntity> entity) {
-        m_entities.push_back(std::move(entity));
-    }
-    
-    void update(double deltaTime) {
-        std::cout << "=== Game Update (deltaTime: " << deltaTime << ") ===\n";
-        
-        // Update all entities polymorphically
-        for (auto& entity : m_entities) {
-            if (entity->isActive()) {
-                entity->update(deltaTime);
-            }
-        }
-        
-        // Remove inactive entities
-        m_entities.erase(
-            std::remove_if(m_entities.begin(), m_entities.end(),
-                [](const std::unique_ptr<GameEntity>& entity) {
-                    return !entity->isActive();
-                }),
-            m_entities.end()
-        );
-    }
-    
-    void render() {
-        std::cout << "=== Game Render ===\n";
-        for (const auto& entity : m_entities) {
-            if (entity->isActive()) {
-                entity->render();
-            }
-        }
-    }
-    
-    void displayAll
-
-# Chapter 15: More on Classes - Advanced Class Features
-
-## Building on Class Fundamentals: Advanced Features for Professional Programming
-
-In Chapter 14, we learned the basics of classes and encapsulation. Now we'll explore advanced features that make classes more powerful and flexible: operator overloading, friend functions, static members, and more sophisticated class design patterns.
-
----
-
-## 15.1 - The Hidden "this" Pointer and const Member Functions
-
-### Understanding Object Context in Member Functions
-
-Every non-static member function receives an implicit `this` pointer:
-
-```cpp
-#include <iostream>
-
-class Counter {
-private:
-    int m_value;
-
-public:
-    Counter(int value = 0) : m_value{value} {}
-    
-    // These two functions are equivalent:
-    void increment1() {
-        m_value++;        // Implicit: this->m_value++
-    }
-    
-    void increment2() {
-        this->m_value++;  // Explicit use of this pointer
-    }
-    
-    // const member function - this becomes const Counter* const this
-    int getValue() const {
-        return m_value;   // Can't modify m_value through const this
-        // m_value++;     // ❌ Error: cannot modify in const function
-    }
-    
-    // Method chaining using this
-    Counter& add(int amount) {
-        m_value += amount;
-        return *this;     // Return reference to current object
-    }
-    
-    // Self-comparison
-    bool equals(const Counter& other) const {
-        return this->m_value == other.m_value;
-    }
-    
-    void displayAddress() const {
-        std::cout << "Object at address: " << this << ", value: " << m_value << '\n';
-    }
-};
-
-int main() {
-    Counter a{10};
-    Counter b{20};
-    
-    a.displayAddress();  // Different addresses
-    b.displayAddress();
-    
-    // Method chaining
-    a.add(5).add(3);     // Chained calls: 10 + 5 + 3 = 18
-    std::cout << "a after chaining: " << a.getValue() << '\n';
-    
-    // const object can only call const member functions
-    const Counter c{100};
-    std::cout << "const counter: " << c.getValue() << '\n';  // ✅ const function
-    // c.increment1();   // ❌ Error: non-const function on const object
-    
-    return 0;
-}
-```
-
-### Const-Correctness in Practice
-
-```cpp
-#include <iostream>
-#include <string>
-#include <vector>
-
-class Student {
-private:
-    std::string m_name;
-    std::vector<int> m_grades;
-    mutable int m_accessCount;  // mutable allows modification in const functions
-
-public:
-    Student(const std::string& name) : m_name{name}, m_accessCount{0} {}
-    
-    // const member functions - promise not to modify object state
-    const std::string& getName() const {
-        ++m_accessCount;  // ✅ mutable member can be modified
-        return m_name;
-    }
-    
-    double getAverageGrade() const {
-        if (m_grades.empty()) return 0.0;
-        
-        int sum = 0;
-        for (int grade : m_grades) {
-            sum += grade;
-        }
-        return static_cast<double>(sum) / m_grades.size();
-    }
-    
-    size_t getGradeCount() const { return m_grades.size(); }
-    
-    int getAccessCount() const { return m_accessCount; }
-    
-    // non-const member functions - can modify object state
-    void addGrade(int grade) {
-        if (grade >= 0 && grade <= 100) {
-            m_grades.push_back(grade);
-        }
-    }
-    
-    void setName(const std::string& name) {
-        m_name = name;
-    }
-    
-    // const and non-const overloads
-    const std::vector<int>& getGrades() const {
-        std::cout << "const version called\n";
-        return m_grades;
-    }
-    
-    std::vector<int>& getGrades() {
-        std::cout << "non-const version called\n";
-        return m_grades;
-    }
-};
-
-void processStudent(const Student& student) {  // const reference parameter
-    std::cout << "Processing student: " << student.getName() << '\n';
-    std::cout << "Average grade: " << student.getAverageGrade() << '\n';
-    // student.addGrade(95);  // ❌ Error: const object, non-const function
-}
-
-int main() {
-    Student alice{"Alice"};
-    alice.addGrade(85);
-    alice.addGrade(92);
-    alice.addGrade(78);
-    
-    processStudent(alice);  // Calls const member functions
-    
-    // Demonstrate const vs non-const overloads
-    const Student& constRef = alice;
-    constRef.getGrades();   // Calls const version
-    alice.getGrades();      // Calls non-const version
-    
-    std::cout << "Access count: " << alice.getAccessCount() << '\n';
-    
-    return 0;
-}
-```
-
----
-
-## 15.2 - Classes and Header Files Organization
-
-### Professional Project Structure
-
-**Math/Vector2D.h** (Interface)
-```cpp
-#ifndef VECTOR2D_H
-#define VECTOR2D_H
-
-#include <iostream>
-
-namespace Math {
-
-class Vector2D {
-private:
-    double m_x, m_y;
-
-public:
-    // Constructors
-    Vector2D(double x = 0.0, double y = 0.0);
-    Vector2D(const Vector2D& other);  // Copy constructor
-    
-    // Destructor
-    ~Vector2D() = default;
-    
-    // Assignment operator
-    Vector2D& operator=(const Vector2D& other);
-    
-    // Accessors
-    double getX() const { return m_x; }
-    double getY() const { return m_y; }
-    double magnitude() const;
-    double magnitudeSquared() const;
-    
-    // Mutators
-    void setX(double x) { m_x = x; }
-    void setY(double y) { m_y = y; }
-    void set(double x, double y);
-    void normalize();
-    
-    // Vector operations
-    Vector2D& add(const Vector2D& other);
-    Vector2D& subtract(const Vector2D& other);
-    Vector2D& multiply(double scalar);
-    double dotProduct(const Vector2D& other) const;
-    
-    // Utility functions
-    void print() const;
-    bool isZero() const;
-    
-    // Static utility functions
-    static double distance(const Vector2D& a, const Vector2D& b);
-    static Vector2D lerp(const Vector2D& a, const Vector2D& b, double t);
-    
-    // Friend functions (declared here, defined outside)
-    friend Vector2D operator+(const Vector2D& left, const Vector2D& right);
-    friend Vector2D operator-(const Vector2D& left, const Vector2D& right);
-    friend Vector2D operator*(const Vector2D& vec, double scalar);
-    friend Vector2D operator*(double scalar, const Vector2D& vec);
-    friend std::ostream& operator<<(std::ostream& out, const Vector2D& vec);
-};
-
-// Free function declarations
-Vector2D operator+(const Vector2D& left, const Vector2D& right);
-Vector2D operator-(const Vector2D& left, const Vector2D& right);
-Vector2D operator*(const Vector2D& vec, double scalar);
-Vector2D operator*(double scalar, const Vector2D& vec);
-std::ostream& operator<<(std::ostream& out, const Vector2D& vec);
-
-} // namespace Math
-
-#endif
-```
-
-**Math/Vector2D.cpp** (Implementation)
-```cpp
-#include "Vector2D.h"
-#include <cmath>
-#include <iostream>
-
-namespace Math {
-
-// Constructor implementations
-Vector2D::Vector2D(double x, double y) : m_x{x}, m_y{y} {}
-
-Vector2D::Vector2D(const Vector2D& other) : m_x{other.m_x}, m_y{other.m_y} {}
-
-// Assignment operator
-Vector2D& Vector2D::operator=(const Vector2D& other) {
-    if (this != &other) {  // Self-assignment check
-        m_x = other.m_x;
-        m_y = other.m_y;
-    }
-    return *this;
-}
-
-// Magnitude calculations
-double Vector2D::magnitude() const {
-    return std::sqrt(m_x * m_x + m_y * m_y);
-}
-
-double Vector2D::magnitudeSquared() const {
-    return m_x * m_x + m_y * m_y;  // Avoid expensive sqrt when possible
-}
-
-// Mutator implementations
-void Vector2D::set(double x, double y) {
-    m_x = x;
-    m_y = y;
-}
-
-void Vector2D::normalize() {
-    double mag = magnitude();
-    if (mag > 0.0) {
-        m_x /= mag;
-        m_y /= mag;
-    }
-}
-
-// Vector operation implementations
-Vector2D& Vector2D::add(const Vector2D& other) {
-    m_x += other.m_x;
-    m_y += other.m_y;
-    return *this;
-}
-
-Vector2D& Vector2D::subtract(const Vector2D& other) {
-    m_x -= other.m_x;
-    m_y -= other.m_y;
-    return *this;
-}
-
-Vector2D& Vector2D::multiply(double scalar) {
-    m_x *= scalar;
-    m_y *= scalar;
-    return *this;
-}
-
-double Vector2D::dotProduct(const Vector2D& other) const {
-    return m_x * other.m_x + m_y * other.m_y;
-}
-
-// Utility function implementations
-void Vector2D::print() const {
-    std::cout << "(" << m_x << ", " << m_y << ")";
-}
-
-bool Vector2D::isZero() const {
-    const double EPSILON = 0.0001;
-    return std::abs(m_x) < EPSILON && std::abs(m_y) < EPSILON;
-}
-
-// Static function implementations
-double Vector2D::distance(const Vector2D& a, const Vector2D& b) {
-    double dx = a.m_x - b.m_x;
-    double dy = a.m_y - b.m_y;
-    return std::sqrt(dx * dx + dy * dy);
-}
-
-Vector2D Vector2D::lerp(const Vector2D& a, const Vector2D& b, double t) {
-    return Vector2D{
-        a.m_x + t * (b.m_x - a.m_x),
-        a.m_y + t * (b.m_y - a.m_y)
-    };
-}
-
-// Friend function implementations
-Vector2D operator+(const Vector2D& left, const Vector2D& right) {
-    return Vector2D{left.m_x + right.m_x, left.m_y + right.m_y};
-}
-
-Vector2D operator-(const Vector2D& left, const Vector2D& right) {
-    return Vector2D{left.m_x - right.m_x, left.m_y - right.m_y};
-}
-
-Vector2D operator*(const Vector2D& vec, double scalar) {
-    return Vector2D{vec.m_x * scalar, vec.m_y * scalar};
-}
-
-Vector2D operator*(double scalar, const Vector2D& vec) {
-    return vec * scalar;  // Reuse the above operator
-}
-
-std::ostream& operator<<(std::ostream& out, const Vector2D& vec) {
-    out << "(" << vec.m_x << ", " << vec.m_y << ")";
-    return out;
-}
-
-} // namespace Math
-```
-
-**main.cpp** (Usage)
-```cpp
-#include "Math/Vector2D.h"
-#include <iostream>
-
-int main() {
-    using namespace Math;
-    
-    Vector2D a{3.0, 4.0};
-    Vector2D b{1.0, 2.0};
-    
-    std::cout << "Vector a: " << a << '\n';
-    std::cout << "Vector b: " << b << '\n';
-    std::cout << "Magnitude of a: " << a.magnitude() << '\n';
-    
-    // Using operators
-    Vector2D c = a + b;
-    std::cout << "a + b = " << c << '\n';
-    
-    Vector2D d = a * 2.0;
-    std::cout << "a * 2 = " << d << '\n';
-    
-    // Using member functions
-    Vector2D e = a;
-    e.normalize();
-    std::cout << "Normalized a: " << e << '\n';
-    
-    // Static functions
-    std::cout << "Distance between a and b: " << Vector2D::distance(a, b) << '\n';
-    
-    return 0;
-}
-```
-
----
-
-## 15.3 - Nested Types and Nested Classes
-
-### Nested Enumerations and Type Aliases
-
-```cpp
-#include <iostream>
-#include <string>
-#include <vector>
-
-class NetworkConnection {
-public:
-    // Nested enumeration - scoped to the class
-    enum class Protocol { TCP, UDP, HTTP, HTTPS };
-    enum class Status { Disconnected, Connecting, Connected, Error };
-    
-    // Nested type alias
-    using Port = unsigned short;
-    using Address = std::string;
-    
-private:
-    Address m_serverAddress;
-    Port m_port;
-    Protocol m_protocol;
-    Status m_status;
-
-public:
-    NetworkConnection(const Address& address, Port port, Protocol protocol)
-        : m_serverAddress{address}, m_port{port}, m_protocol{protocol}, m_status{Status::Disconnected} {}
-    
-    bool connect() {
-        m_status = Status::Connecting;
-        std::cout << "Connecting to " << m_serverAddress << ":" << m_port;
-        std::cout << " using " << protocolToString(m_protocol) << '\n';
-        
-        // Simulate connection logic
-        m_status = Status::Connected;
-        return true;
-    }
-    
-    void disconnect() {
-        if (m_status == Status::Connected) {
-            m_status = Status::Disconnected;
-            std::cout << "Disconnected from server\n";
-        }
-    }
-    
-    Status getStatus() const { return m_status; }
-    Protocol getProtocol() const { return m_protocol; }
-    
-private:
-    std::string protocolToString(Protocol protocol) const {
-        switch (protocol) {
-            case Protocol::TCP:   return "TCP";
-            case Protocol::UDP:   return "UDP";
-            case Protocol::HTTP:  return "HTTP";
-            case Protocol::HTTPS: return "HTTPS";
-            default: return "Unknown";
-        }
-    }
-};
-
-int main() {
-    // Use nested types with scope resolution
-    NetworkConnection conn{"192.168.1.1", 8080, NetworkConnection::Protocol::HTTP};
-    
-    conn.connect();
-    
-    if (conn.getStatus() == NetworkConnection::Status::Connected) {
-        std::cout << "Connection successful!\n";
-    }
-    
-    conn.disconnect();
-    
-    return 0;
-}
-```
-
-### Nested Classes for Helper Objects
-
-```cpp
-#include <iostream>
-#include <vector>
-#include <string>
+#include <algorithm>
 
 class Database {
-private:
-    // Nested class for internal use
-    class Connection {
-    private:
-        std::string m_connectionString;
-        bool m_isOpen;
-        
-    public:
-        Connection(const std::string& connStr) : m_connectionString{connStr}, m_isOpen{false} {}
-        
-        bool open() {
-            std::cout << "Opening database connection: " << m_connectionString << '\n';
-            m_isOpen = true;
-            return true;
-        }
-        
-        void close() {
-            if (m_isOpen) {
-                std::cout << "Closing database connection\n";
-                m_isOpen = false;
-            }
-        }
-        
-        bool execute(const std::string& query) {
-            if (!m_isOpen) return false;
-            std::cout << "Executing: " << query << '\n';
-            return true;
-        }
-        
-        bool isOpen() const { return m_isOpen; }
-    };
-    
-    Connection m_connection;
-    std::string m_databaseName;
-
 public:
-    Database(const std::string& dbName, const std::string& connStr)
-        : m_databaseName{dbName}, m_connection{connStr} {}
-    
-    ~Database() {
-        m_connection.close();
-    }
-    
-    bool connect() {
-        return m_connection.open();
-    }
-    
-    bool executeQuery(const std::string& query) {
-        return m_connection.execute(query);
-    }
-    
-    bool isConnected() const {
-        return m_connection.isOpen();
-    }
-    
-    const std::string& getName() const { return m_databaseName; }
+    void connect() { std::cout << "Connected to database\n"; }
+    void disconnect() { std::cout << "Disconnected from database\n"; }
+    ~Database() { disconnect(); }
 };
 
-int main() {
-    Database userDB{"UserDatabase", "postgresql://localhost:5432/users"};
+class DataManager {
+private:
+    std::unique_ptr<Database> db_;
     
-    if (userDB.connect()) {
-        userDB.executeQuery("SELECT * FROM users");
-        userDB.executeQuery("UPDATE users SET last_login = NOW() WHERE id = 1");
+public:
+    DataManager() : db_(std::make_unique<Database>()) {
+        db_->connect();
     }
     
-    // Connection automatically closed by destructor
+    // Move-only semantics (no copying)
+    DataManager(const DataManager&) = delete;
+    DataManager& operator=(const DataManager&) = delete;
     
-    return 0;
+    DataManager(DataManager&& other) noexcept : db_(std::move(other.db_)) {}
+    DataManager& operator=(DataManager&& other) noexcept {
+        if (this != &other) {
+            db_ = std::move(other.db_);
+        }
+        return *this;
+    }
+    
+    // Transfer ownership
+    std::unique_ptr<Database> releaseDatabase() {
+        return std::move(db_);
+    }
+};
+
+// Factory function returning unique ownership
+std::unique_ptr<Resource> createResource(int value) {
+    return std::make_unique<Resource>(value);
+}
+
+void uniquePtrExamples() {
+    // Array management
+    std::unique_ptr<int[]> numbers = std::make_unique<int[]>(100);
+    
+    // Container of unique_ptrs
+    std::vector<std::unique_ptr<Resource>> resources;
+    resources.push_back(createResource(10));
+    resources.push_back(createResource(20));
+    
+    // Move semantics in algorithms
+    std::sort(resources.begin(), resources.end(),
+        [](const std::unique_ptr<Resource>& a, const std::unique_ptr<Resource>& b) {
+            return a.get() < b.get();  // Sort by pointer address
+        });
 }
 ```
 
----
-
-## 15.4 - Timing Your Code
-
-### Performance Measurement Class
+### shared_ptr: Shared Ownership
 
 ```cpp
-#include <iostream>
-#include <chrono>
+#include <memory>
 #include <vector>
-#include <algorithm>
-#include <string>
+#include <thread>
 
-class Timer {
-private:
-    std::chrono::steady_clock::time_point m_startTime;
-    std::chrono::steady_clock::time_point m_endTime;
-    bool m_running;
-
-public:
-    Timer() : m_running{false} {}
-    
-    void start() {
-        m_startTime = std::chrono::steady_clock::now();
-        m_running = true;
-    }
-    
-    void stop() {
-        if (m_running) {
-            m_endTime = std::chrono::steady_clock::now();
-            m_running = false;
-        }
-    }
-    
-    double getElapsedMilliseconds() const {
-        if (m_running) {
-            auto currentTime = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-                currentTime - m_startTime);
-            return elapsed.count() / 1000.0;
-        } else {
-            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-                m_endTime - m_startTime);
-            return elapsed.count() / 1000.0;
-        }
-    }
-    
-    double getElapsedSeconds() const {
-        return getElapsedMilliseconds() / 1000.0;
-    }
-    
-    bool isRunning() const { return m_running; }
-};
-
-// RAII Timer for automatic measurement
-class ScopedTimer {
-private:
-    Timer m_timer;
-    std::string m_label;
-
-public:
-    ScopedTimer(const std::string& label) : m_label{label} {
-        std::cout << "Starting: " << m_label << '\n';
-        m_timer.start();
-    }
-    
-    ~ScopedTimer() {
-        m_timer.stop();
-        std::cout << "Completed: " << m_label 
-                  << " (" << m_timer.getElapsedMilliseconds() << " ms)\n";
-    }
-};
-
-// Performance testing functions
-void slowFunction() {
-    std::vector<int> data(1000000);
-    for (int i = 0; i < 1000000; ++i) {
-        data[i] = i * i;
-    }
-    std::sort(data.begin(), data.end());
-}
-
-void fastFunction() {
-    std::vector<int> data;
-    data.reserve(1000000);  // Pre-allocate memory
-    for (int i = 0; i < 1000000; ++i) {
-        data.push_back(i * i);
-    }
-}
-
-int main() {
-    // Manual timing
-    Timer manualTimer;
-    
-    manualTimer.start();
-    slowFunction();
-    manualTimer.stop();
-    
-    std::cout << "Manual timing - Slow function: " 
-              << manualTimer.getElapsedMilliseconds() << " ms\n";
-    
-    // RAII automatic timing
-    {
-        ScopedTimer autoTimer{"Fast function execution"};
-        fastFunction();
-        // Timer automatically stops and reports when going out of scope
-    }
-    
-    // Multiple measurements
-    std::vector<double> measurements;
-    for (int i = 0; i < 5; ++i) {
-        Timer timer;
-        timer.start();
-        fastFunction();
-        timer.stop();
-        measurements.push_back(timer.getElapsedMilliseconds());
-    }
-    
-    double average = 0.0;
-    for (double time : measurements) {
-        average += time;
-    }
-    average /= measurements.size();
-    
-    std::cout << "Average time over 5 runs: " << average << " ms\n";
-    
-    return 0;
-}
-```
-
----
-
-## 15.5 - Static Member Variables
-
-### Shared Data Among All Instances
-
-```cpp
-#include <iostream>
-#include <string>
-#include <vector>
-
-class Employee {
-private:
-    static int s_nextEmployeeId;        // Shared by all instances
-    static double s_minimumWage;        // Company-wide policy
-    static std::string s_companyName;   // Company information
-    
-    int m_employeeId;                   // Instance-specific data
-    std::string m_name;
-    double m_salary;
-    
-public:
-    Employee(const std::string& name, double salary)
-        : m_employeeId{s_nextEmployeeId++}, m_name{name}, m_salary{salary} {
-        if (salary < s_minimumWage) {
-            m_salary = s_minimumWage;
-            std::cout << "Salary adjusted to minimum wage for " << m_name << '\n';
-        }
-    }
-    
-    // Static member functions - can only access static members
-    static void setCompanyName(const std::string& name) {
-        s_companyName = name;
-    }
-    
-    static const std::string& getCompanyName() {
-        return s_companyName;
-    }
-    
-    static void setMinimumWage(double wage) {
-        if (wage > 0) {
-            s_minimumWage = wage;
-            std::cout << "Minimum wage updated to $" << wage << '\n';
-        }
-    }
-    
-    static double getMinimumWage() {
-        return s_minimumWage;
-    }
-    
-    static int getNextEmployeeId() {
-        return s_nextEmployeeId;
-    }
-    
-    static int getTotalEmployees() {
-        return s_nextEmployeeId - 1;
-    }
-    
-    // Instance member functions
-    int getEmployeeId() const { return m_employeeId; }
-    const std::string& getName() const { return m_name; }
-    double getSalary() const { return m_salary; }
-    
-    void setSalary(double salary) {
-        if (salary >= s_minimumWage) {
-            m_salary = salary;
-        } else {
-            std::cout << "Cannot set salary below minimum wage\n";
-        }
-    }
-    
-    void displayInfo() const {
-        std::cout << "Employee #" << m_employeeId << ": " << m_name 
-                  << " at " << s_companyName << " earns $" << m_salary << '\n';
-    }
-};
-
-// Static member variable definitions (required outside class)
-int Employee::s_nextEmployeeId = 1000;         // Start employee IDs at 1000
-double Employee::s_minimumWage = 15.0;         // $15/hour minimum
-std::string Employee::s_companyName = "TechCorp";
-
-int main() {
-    std::cout << "Company: " << Employee::getCompanyName() << '\n';
-    std::cout << "Current minimum wage: $" << Employee::getMinimumWage() << '\n';
-    std::cout << "Total employees: " << Employee::getTotalEmployees() << '\n';
-    
-    // Create employees
-    Employee alice{"Alice Johnson", 25.0};
-    Employee bob{"Bob Smith", 10.0};    // Below minimum, will be adjusted
-    Employee charlie{"Charlie Brown", 30.0};
-    
-    alice.displayInfo();
-    bob.displayInfo();
-    charlie.displayInfo();
-    
-    std::cout << "Total employees after creation: " << Employee::getTotalEmployees() << '\n';
-    
-    // Update company-wide policies
-    Employee::setMinimumWage(18.0);
-    Employee::setCompanyName("TechCorp Solutions");
-    
-    // Try to set salary below new minimum
-    bob.setSalary(16.0);  // Will be rejected
-    bob.setSalary(20.0);  // Will be accepted
-    
-    bob.displayInfo();
-    
-    return 0;
-}
-```
-
-### Static Members for Configuration and Tracking
-
-```cpp
-#include <iostream>
-#include <vector>
-#include <algorithm>
-
-class GameEntity {
-private:
-    static int s_nextId;
-    static std::vector<GameEntity*> s_allEntities;  // Track all instances
-    static bool s_debugMode;
-    static int s_maxEntities;
-    
-    int m_id;
-    std::string m_name;
-    double m_x, m_y;
-    bool m_active;
-    
-public:
-    GameEntity(const std::string& name, double x = 0.0, double y = 0.0)
-        : m_id{s_nextId++}, m_name{name}, m_x{x}, m_y{y}, m_active{true} {
-        
-        if (s_allEntities.size() >= static_cast<size_t>(s_maxEntities)) {
-            throw std::runtime_error("Maximum number of entities exceeded");
-        }
-        
-        s_allEntities.push_back(this);
-        
-        if (s_debugMode) {
-            std::cout << "Entity created: " << m_name << " (ID: " << m_id << ")\n";
-        }
-    }
-    
-    ~GameEntity() {
-        // Remove from static tracking vector
-        auto it = std::find(s_allEntities.begin(), s_allEntities.end(), this);
-        if (it != s_allEntities.end()) {
-            s_allEntities.erase(it);
-        }
-        
-        if (s_debugMode) {
-            std::cout << "Entity destroyed: " << m_name << " (ID: " << m_id << ")\n";
-        }
-    }
-    
-    // Static configuration functions
-    static void setDebugMode(bool enabled) { s_debugMode = enabled; }
-    static bool isDebugMode() { return s_debugMode; }
-    static void setMaxEntities(int max) { s_maxEntities = max; }
-    static int getMaxEntities() { return s_maxEntities; }
-    
-    // Static entity management
-    static size_t getEntityCount() { return s_allEntities.size(); }
-    
-    static void printAllEntities() {
-        std::cout << "=== All Entities (" << s_allEntities.size() << ") ===\n";
-        for (const GameEntity* entity : s_allEntities) {
-            entity->printInfo();
-        }
-    }
-    
-    static GameEntity* findEntityById(int id) {
-        for (GameEntity* entity : s_allEntities) {
-            if (entity->m_id == id) {
-                return entity;
-            }
-        }
-        return nullptr;
-    }
-    
-    static void updateAllEntities() {
-        for (GameEntity* entity : s_allEntities) {
-            if (entity->m_active) {
-                entity->update();
-            }
-        }
-    }
-    
-    // Instance methods
-    int getId() const { return m_id; }
-    const std::string& getName() const { return m_name; }
-    void setPosition(double x, double y) { m_x = x; m_y = y; }
-    void setActive(bool active) { m_active = active; }
-    bool isActive() const { return m_active; }
-    
-    void printInfo() const {
-        std::cout << "  " << m_name << " (ID: " << m_id << ") at (" 
-                  << m_x << ", " << m_y << ") " 
-                  << (m_active ? "[Active]" : "[Inactive]") << '\n';
-    }
-    
-private:
-    void update() {
-        // Simple movement simulation
-        m_x += 1.0;
-        if (s_debugMode) {
-            std::cout << m_name << " moved to (" << m_x << ", " << m_y << ")\n";
-        }
-    }
-};
-
-// Static member definitions
-int GameEntity::s_nextId = 1;
-std::vector<GameEntity*> GameEntity::s_allEntities;
-bool GameEntity::s_debugMode = false;
-int GameEntity::s_maxEntities = 100;
-
-int main() {
-    // Configure system
-    GameEntity::setDebugMode(true);
-    GameEntity::setMaxEntities(5);
-    
-    std::cout << "Max entities: " << GameEntity::getMaxEntities() << '\n';
-    std::cout << "Current count: " << GameEntity::getEntityCount() << '\n';
-    
-    // Create entities
-    GameEntity player{"Player", 0.0, 0.0};
-    GameEntity enemy1{"Enemy1", 10.0, 5.0};
-    GameEntity enemy2{"Enemy2", -5.0, 8.0};
-    
-    GameEntity::printAllEntities();
-    
-    // Find specific entity
-    GameEntity* found = GameEntity::findEntityById(2);
-    if (found) {
-        std::cout << "Found entity: " << found->getName() << '\n';
-        found->setActive(false);
-    }
-    
-    // Update all entities
-    std::cout << "\n=== Updating all entities ===\n";
-    GameEntity::updateAllEntities();
-    
-    GameEntity::printAllEntities();
-    
-    return 0;
-    // All entities destroyed automatically, removed from static vector
-}
-```
-
----
-
-## 15.6 - Static Member Functions
-
-### Static Functions for Utility and Factory Patterns
-
-```cpp
-#include <iostream>
-#include <string>
-#include <cmath>
-#include <random>
-
-class MathUtils {
-public:
-    // Static utility functions - no instance required
-    static double degreesToRadians(double degrees) {
-        return degrees * M_PI / 180.0;
-    }
-    
-    static double radiansToDegrees(double radians) {
-        return radians * 180.0 / M_PI;
-    }
-    
-    static bool isPrime(int number) {
-        if (number <= 1) return false;
-        if (number <= 3) return true;
-        if (number % 2 == 0 || number % 3 == 0) return false;
-        
-        for (int i = 5; i * i <= number; i += 6) {
-            if (number % i == 0 || number % (i + 2) == 0) {
-                return false;
-            }
-        }
-        return true;
-    }
-    
-    static int gcd(int a, int b) {
-        while (b != 0) {
-            int temp = b;
-            b = a % b;
-            a = temp;
-        }
-        return a;
-    }
-    
-    static double distance(double x1, double y1, double x2, double y2) {
-        double dx = x2 - x1;
-        double dy = y2 - y1;
-        return std::sqrt(dx * dx + dy * dy);
-    }
-};
-
-class Color {
-private:
-    int m_red, m_green, m_blue;
-    
-    // Private constructor - force use of factory methods
-    Color(int red, int green, int blue) 
-        : m_red{clamp(red)}, m_green{clamp(green)}, m_blue{clamp(blue)} {}
-
-public:
-    // Static factory methods
-    static Color fromRGB(int red, int green, int blue) {
-        return Color{red, green, blue};
-    }
-    
-    static Color fromHex(const std::string& hexColor) {
-        // Simplified hex parsing (assumes #RRGGBB format)
-        if (hexColor.length() == 7 && hexColor[0] == '#') {
-            int red = std::stoi(hexColor.substr(1, 2), nullptr, 16);
-            int green = std::stoi(hexColor.substr(3, 2), nullptr, 16);
-            int blue = std::stoi(hexColor.substr(5, 2), nullptr, 16);
-            return Color{red, green, blue};
-        }
-        return Color{0, 0, 0}; // Default to black for invalid input
-    }
-    
-    static Color random() {
-        static std::random_device rd;
-        static std::mt19937 gen(rd());
-        static std::uniform_int_distribution<> dis(0, 255);
-        
-        return Color{dis(gen), dis(gen), dis(gen)};
-    }
-    
-    // Predefined color constants (static factory methods)
-    static Color red() { return Color{255, 0, 0}; }
-    static Color green() { return Color{0, 255, 0}; }
-    static Color blue() { return Color{0, 0, 255}; }
-    static Color white() { return Color{255, 255, 255}; }
-    static Color black() { return Color{0, 0, 0}; }
-    
-    // Instance methods
-    int getRed() const { return m_red; }
-    int getGreen() const { return m_green; }
-    int getBlue() const { return m_blue; }
-    
-    void display() const {
-        std::cout << "RGB(" << m_red << ", " << m_green << ", " << m_blue << ")";
-    }
-    
-    std::string toHex() const {
-        char buffer[8];
-        std::sprintf(buffer, "#%02X%02X%02X", m_red, m_green, m_blue);
-        return std::string(buffer);
-    }
-    
-private:
-    static int clamp(int value) {
-        return (value < 0) ? 0 : (value > 255) ? 255 : value;
-    }
-};
-
-// Singleton pattern using static members
 class Logger {
-private:
-    static Logger* s_instance;
-    std::string m_logLevel;
-    bool m_enabled;
-    
-    // Private constructor prevents direct instantiation
-    Logger() : m_logLevel{"INFO"}, m_enabled{true} {}
-
 public:
-    // Static method to get singleton instance
-    static Logger& getInstance() {
-        if (s_instance == nullptr) {
-            s_instance = new Logger();
-        }
-        return *s_instance;
+    void log(const std::string& message) {
+        std::cout << "[LOG] " << message << std::endl;
     }
     
-    // Delete copy constructor and assignment operator
-    Logger(const Logger&) = delete;
-    Logger& operator=(const Logger&) = delete;
-    
-    static void setLogLevel(const std::string& level) {
-        getInstance().m_logLevel = level;
-    }
-    
-    static void enable() { getInstance().m_enabled = true; }
-    static void disable() { getInstance().m_enabled = false; }
-    
-    static void log(const std::string& message) {
-        Logger& logger = getInstance();
-        if (logger.m_enabled) {
-            std::cout << "[" << logger.m_logLevel << "] " << message << '\n';
-        }
-    }
-    
-    static void info(const std::string& message) {
-        log("INFO: " + message);
-    }
-    
-    static void error(const std::string& message) {
-        log("ERROR: " + message);
-    }
-    
-    // Cleanup (optional - for demonstration)
-    static void cleanup() {
-        delete s_instance;
-        s_instance = nullptr;
+    ~Logger() {
+        std::cout << "Logger destroyed\n";
     }
 };
 
-// Static member definition
-Logger* Logger::s_instance = nullptr;
+class Service {
+private:
+    std::shared_ptr<Logger> logger_;
+    std::string name_;
+    
+public:
+    Service(const std::string& name, std::shared_ptr<Logger> logger) 
+        : name_(name), logger_(std::move(logger)) {}
+    
+    void doWork() {
+        logger_->log(name_ + " is working");
+    }
+};
 
-int main() {
-    // Using static utility functions
-    std::cout << "45 degrees = " << MathUtils::degreesToRadians(45.0) << " radians\n";
-    std::cout << "Is 17 prime? " << (MathUtils::isPrime(17) ? "Yes" : "No") << '\n';
-    std::cout << "GCD(48, 18) = " << MathUtils::gcd(48, 18) << '\n';
-    std::cout << "Distance: " << MathUtils::distance(0, 0, 3, 4) << '\n';
+void sharedPtrExamples() {
+    // Shared logger across multiple services
+    auto logger = std::make_shared<Logger>();
     
-    // Using static factory methods
-    Color red = Color::red();
-    Color fromHex = Color::fromHex("#FF5733");
-    Color random = Color::random();
+    std::vector<std::unique_ptr<Service>> services;
+    services.push_back(std::make_unique<Service>("Service1", logger));
+    services.push_back(std::make_unique<Service>("Service2", logger));
+    services.push_back(std::make_unique<Service>("Service3", logger));
     
-    std::cout << "\nColors:\n";
-    std::cout << "Red: "; red.display(); std::cout << " -> " << red.toHex() << '\n';
-    std::cout << "From hex: "; fromHex.display(); std::cout << " -> " << fromHex.toHex() << '\n';
-    std::cout << "Random: "; random.display(); std::cout << " -> " << random.toHex() << '\n';
+    // All services share the same logger
+    for (auto& service : services) {
+        service->doWork();
+    }
     
-    // Using singleton logger
-    Logger::info("Application started");
-    Logger::setLogLevel("DEBUG");
-    Logger::log("This is a debug message");
-    Logger::error("This is an error message");
+    std::cout << "Logger use count: " << logger.use_count() << "\n";
     
-    Logger::disable();
-    Logger::info("This won't be printed");
+    // Logger automatically destroyed when last shared_ptr is destroyed
+}
+
+// Thread-safe shared ownership
+void threadSafeSharing() {
+    auto resource = std::make_shared<Resource>(100);
     
-    Logger::enable();
-    Logger::info("Logging re-enabled");
+    std::vector<std::thread> threads;
     
-    Logger::cleanup();  // Optional cleanup
+    for (int i = 0; i < 4; ++i) {
+        threads.emplace_back([resource]() {  // Capture by value (copies shared_ptr)
+            resource->use();  // Thread-safe reference counting
+        });
+    }
     
-    return 0;
+    for (auto& t : threads) {
+        t.join();
+    }
 }
 ```
 
----
-
-## 15.7 - Friend Functions and Friend Classes
-
-### Friend Functions for Enhanced Operator Overloading
+### weak_ptr: Breaking Circular References
 
 ```cpp
+#include <memory>
 #include <iostream>
-#include <string>
 
-class Fraction {
-private:
-    int m_numerator;
-    int m_denominator;
-    
-    // Helper function to simplify fractions
-    void simplify() {
-        int gcd = calculateGCD(std::abs(m_numerator), std::abs(m_denominator));
-        m_numerator /= gcd;
-        m_denominator /= gcd;
-        
-        // Keep denominator positive
-        if (m_denominator < 0) {
-            m_numerator = -m_numerator;
-            m_denominator = -m_denominator;
-        }
-    }
-    
-    static int calculateGCD(int a, int b) {
-        while (b != 0) {
-            int temp = b;
-            b = a % b;
-            a = temp;
-        }
-        return a;
-    }
+class Child;
 
+class Parent {
 public:
-    Fraction(int numerator = 0, int denominator = 1) 
-        : m_numerator{numerator}, m_denominator{denominator} {
-        if (denominator == 0) {
-            throw std::invalid_argument("Denominator cannot be zero");
-        }
-        simplify();
-    }
+    std::shared_ptr<Child> child_;
     
-    // Member function operators (for assignment-style operations)
-    Fraction& operator+=(const Fraction& other) {
-        m_numerator = m_numerator * other.m_denominator + other.m_numerator * m_denominator;
-        m_denominator = m_denominator * other.m_denominator;
-        simplify();
-        return *this;
-    }
+    Parent() { std::cout << "Parent created\n"; }
+    ~Parent() { std::cout << "Parent destroyed\n"; }
     
-    Fraction& operator-=(const Fraction& other) {
-        m_numerator = m_numerator * other.m_denominator - other.m_numerator * m_denominator;
-        m_denominator = m_denominator * other.m_denominator;
-        simplify();
-        return *this;
-    }
-    
-    // Friend functions for binary operators (need access to private members)
-    friend Fraction operator+(const Fraction& left, const Fraction& right);
-    friend Fraction operator-(const Fraction& left, const Fraction& right);
-    friend Fraction operator*(const Fraction& left, const Fraction& right);
-    friend Fraction operator/(const Fraction& left, const Fraction& right);
-    
-    // Friend functions for comparison operators
-    friend bool operator==(const Fraction& left, const Fraction& right);
-    friend bool operator!=(const Fraction& left, const Fraction& right);
-    friend bool operator<(const Fraction& left, const Fraction& right);
-    friend bool operator>(const Fraction& left, const Fraction& right);
-    
-    // Friend function for stream insertion
-    friend std::ostream& operator<<(std::ostream& out, const Fraction& fraction);
-    friend std::istream& operator>>(std::istream& in, Fraction& fraction);
-    
-    // Accessor methods
-    int getNumerator() const { return m_numerator; }
-    int getDenominator() const { return m_denominator; }
-    
-    double toDouble() const {
-        return static_cast<double>(m_numerator) / m_denominator;
+    void setChild(std::shared_ptr<Child> child) {
+        child_ = child;
     }
 };
 
-// Friend function implementations (have access to private members)
-Fraction operator+(const Fraction& left, const Fraction& right) {
-    return Fraction{
-        left.m_numerator * right.m_denominator + right.m_numerator * left.m_denominator,
-        left.m_denominator * right.m_denominator
-    };
-}
-
-Fraction operator-(const Fraction& left, const Fraction& right) {
-    return Fraction{
-        left.m_numerator * right.m_denominator - right.m_numerator * left.m_denominator,
-        left.m_denominator * right.m_denominator
-    };
-}
-
-Fraction operator*(const Fraction& left, const Fraction& right) {
-    return Fraction{
-        left.m_numerator * right.m_numerator,
-        left.m_denominator * right.m_denominator
-    };
-}
-
-Fraction operator/(const Fraction& left, const Fraction& right) {
-    return Fraction{
-        left.m_numerator * right.m_denominator,
-        left.m_denominator * right.m_numerator
-    };
-}
-
-bool operator==(const Fraction& left, const Fraction& right) {
-    return left.m_numerator == right.m_numerator && 
-           left.m_denominator == right.m_denominator;
-}
-
-bool operator!=(const Fraction& left, const Fraction& right) {
-    return !(left == right);
-}
-
-bool operator<(const Fraction& left, const Fraction& right) {
-    return left.m_numerator * right.m_denominator < 
-           right.m_numerator * left.m_denominator;
-}
-
-bool operator>(const Fraction& left, const Fraction& right) {
-    return right < left;
-}
-
-std::ostream& operator<<(std::ostream& out, const Fraction& fraction) {
-    if (fraction.m_denominator == 1) {
-        out << fraction.m_numerator;
-    } else {
-        out << fraction.m_numerator << "/" << fraction.m_denominator;
-    }
-    return out;
-}
-
-std::istream& operator>>(std::istream& in, Fraction& fraction) {
-    int numerator, denominator = 1;
-    char slash;
-    
-    in >> numerator;
-    if (in.peek() == '/') {
-        in >> slash >> denominator;
-    }
-    
-    fraction = Fraction{numerator, denominator};
-    return in;
-}
-
-int main() {
-    try {
-        Fraction a{3, 4};
-        Fraction b{1, 2};
-        
-        std::cout << "a = " << a << '\n';
-        std::cout << "b = " << b << '\n';
-        
-        // Using friend operators
-        Fraction sum = a + b;
-        Fraction difference = a - b;
-        Fraction product = a * b;
-        Fraction quotient = a / b;
-        
-        std::cout << "a + b = " << sum << '\n';
-        std::cout << "a - b = " << difference << '\n';
-        std::cout << "a * b = " << product << '\n';
-        std::cout << "a / b = " << quotient << '\n';
-        
-        // Comparisons
-        std::cout << "a == b: " << (a == b ? "true" : "false") << '\n';
-        std::cout << "a > b: " << (a > b ? "true" : "false") << '\n';
-        
-        // Assignment operators
-        Fraction c{1, 3};
-        c += a;
-        std::cout << "After c += a: c = " << c << '\n';
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n';
-    }
-    
-    return 0;
-}
-    
-
-# Chapter 14: Introduction to Object-Oriented Programming - From Structs to Classes
-
-## Building from Structs: Creating Intelligent Objects
-
-In Chapter 13, we learned to bundle related data using structs. Now we'll transform these passive data containers into active, intelligent objects that can manage their own behavior. This is the foundation of **Object-Oriented Programming (OOP)**.
-
----
-
-## 14.1 - Introduction to Object-Oriented Programming
-
-### The Evolution from Procedural to Object-Oriented
-
-Consider managing a bank account with traditional procedural programming:
-
-```cpp
-// Procedural approach - data and functions are separate
-struct BankAccount {
-    double balance;
-    std::string accountNumber;
-};
-
-// Functions operate on the data externally
-double getBalance(const BankAccount& account) {
-    return account.balance;
-}
-
-bool withdraw(BankAccount& account, double amount) {
-    if (amount <= account.balance) {
-        account.balance -= amount;
-        return true;
-    }
-    return false;
-}
-
-void deposit(BankAccount& account, double amount) {
-    account.balance += amount;
-}
-```
-
-**Problems with this approach:**
-- Data and related functions are scattered
-- No protection against invalid operations
-- Anyone can directly modify `balance`
-- Functions must be remembered and called correctly
-
-### Object-Oriented Solution
-
-```cpp
-#include <iostream>
-#include <string>
-
-class BankAccount {
-private:
-    double m_balance;
-    std::string m_accountNumber;
-
+class Child {
 public:
-    // Constructor
-    BankAccount(const std::string& accountNumber, double initialBalance = 0.0)
-        : m_accountNumber{accountNumber}, m_balance{initialBalance} {}
+    std::weak_ptr<Parent> parent_;  // ✅ weak_ptr breaks the cycle
     
-    // Member functions (methods) that operate on the object's data
-    double getBalance() const { return m_balance; }
+    Child() { std::cout << "Child created\n"; }
+    ~Child() { std::cout << "Child destroyed\n"; }
     
-    bool withdraw(double amount) {
-        if (amount > 0 && amount <= m_balance) {
-            m_balance -= amount;
-            return true;
-        }
-        return false;
+    void setParent(std::shared_ptr<Parent> parent) {
+        parent_ = parent;
     }
     
-    void deposit(double amount) {
-        if (amount > 0) {
-            m_balance += amount;
-        }
-    }
-    
-    void displayInfo() const {
-        std::cout << "Account: " << m_accountNumber 
-                  << ", Balance: $" << m_balance << '\n';
-    }
-};
-
-int main() {
-    BankAccount savings{"SAV-001", 1000.0};
-    
-    savings.displayInfo();           // Account: SAV-001, Balance: $1000
-    savings.deposit(250.0);          // Method call on the object
-    savings.withdraw(100.0);         // Object manages its own state
-    savings.displayInfo();           // Account: SAV-001, Balance: $1150
-    
-    // savings.m_balance = -500;     // ❌ Error: private member not accessible
-    
-    return 0;
-}
-```
-
-### Core OOP Principles
-
-1. **Encapsulation** - Bundle data and functions together, control access
-2. **Data Hiding** - Keep internal details private, expose only necessary interface
-3. **Abstraction** - Provide simple interface while hiding complexity
-4. **Inheritance** - Create new classes based on existing ones (Chapter 17-18)
-5. **Polymorphism** - Objects of different types respond to same interface (Chapter 18)
-
----
-
-## 14.2 - Classes and Class Members
-
-### From struct to class
-
-In C++, `struct` and `class` are nearly identical - the only difference is default access:
-
-```cpp
-// struct: members are public by default
-struct Point2D {
-    double x, y;  // public by default
-    void display() { std::cout << "(" << x << ", " << y << ")\n"; }
-};
-
-// class: members are private by default  
-class Point3D {
-    double x, y, z;  // private by default
-    
-public:  // Must explicitly specify public
-    void setCoordinates(double newX, double newY, double newZ) {
-        x = newX; y = newY; z = newZ;
-    }
-    
-    void display() const {
-        std::cout << "(" << x << ", " << y << ", " << z << ")\n";
-    }
-};
-```
-
-### Class Member Types
-
-```cpp
-#include <iostream>
-#include <string>
-
-class Student {
-private:
-    // Data members (member variables)
-    std::string m_name;
-    int m_id;
-    double m_gpa;
-    static int s_totalStudents;  // Static member - shared by all instances
-
-public:
-    // Member functions (methods)
-    Student(const std::string& name, int id, double gpa = 0.0);  // Constructor
-    ~Student();  // Destructor
-    
-    // Accessor functions (getters)
-    const std::string& getName() const { return m_name; }
-    int getId() const { return m_id; }
-    double getGpa() const { return m_gpa; }
-    
-    // Mutator functions (setters)
-    void setName(const std::string& name) { m_name = name; }
-    void setGpa(double gpa) { 
-        if (gpa >= 0.0 && gpa <= 4.0) {
-            m_gpa = gpa; 
-        }
-    }
-    
-    // Utility functions
-    void displayInfo() const;
-    bool isHonorStudent() const { return m_gpa >= 3.5; }
-    
-    // Static member function
-    static int getTotalStudents() { return s_totalStudents; }
-};
-
-// Static member definition (outside class)
-int Student::s_totalStudents = 0;
-
-// Constructor implementation
-Student::Student(const std::string& name, int id, double gpa)
-    : m_name{name}, m_id{id}, m_gpa{gpa} {
-    ++s_totalStudents;
-    std::cout << "Student " << m_name << " created\n";
-}
-
-// Destructor implementation  
-Student::~Student() {
-    --s_totalStudents;
-    std::cout << "Student " << m_name << " destroyed\n";
-}
-
-// Member function implementation
-void Student::displayInfo() const {
-    std::cout << "Name: " << m_name << ", ID: " << m_id 
-              << ", GPA: " << m_gpa << '\n';
-}
-
-int main() {
-    std::cout << "Total students: " << Student::getTotalStudents() << '\n';
-    
-    Student alice{"Alice Johnson", 12345, 3.85};
-    Student bob{"Bob Smith", 54321, 2.95};
-    
-    std::cout << "Total students: " << Student::getTotalStudents() << '\n';
-    
-    alice.displayInfo();
-    std::cout << alice.getName() << " is " 
-              << (alice.isHonorStudent() ? "" : "not ") 
-              << "an honor student\n";
-    
-    return 0;
-}
-```
-
----
-
-## 14.3 - Public vs Private Access Specifiers
-
-### Access Control in Action
-
-```cpp
-#include <iostream>
-#include <string>
-
-class SecureVault {
-private:
-    std::string m_contents;
-    std::string m_passcode;
-    bool m_isLocked;
-    int m_failedAttempts;
-    static constexpr int MAX_ATTEMPTS = 3;
-
-public:
-    SecureVault(const std::string& passcode) 
-        : m_passcode{passcode}, m_isLocked{true}, m_failedAttempts{0} {}
-    
-    bool unlock(const std::string& attempt) {
-        if (m_failedAttempts >= MAX_ATTEMPTS) {
-            std::cout << "Vault permanently locked due to too many failed attempts!\n";
-            return false;
-        }
-        
-        if (attempt == m_passcode) {
-            m_isLocked = false;
-            m_failedAttempts = 0;  // Reset on successful unlock
-            std::cout << "Vault unlocked!\n";
-            return true;
+    void doSomethingWithParent() {
+        if (auto parent = parent_.lock()) {  // Safe access
+            std::cout << "Child accessing parent\n";
         } else {
-            ++m_failedAttempts;
-            std::cout << "Wrong passcode! Attempts remaining: " 
-                      << (MAX_ATTEMPTS - m_failedAttempts) << '\n';
-            return false;
+            std::cout << "Parent no longer exists\n";
         }
-    }
-    
-    void lock() {
-        m_isLocked = true;
-        std::cout << "Vault locked\n";
-    }
-    
-    bool storeItem(const std::string& item) {
-        if (m_isLocked) {
-            std::cout << "Cannot store item: vault is locked\n";
-            return false;
-        }
-        m_contents = item;
-        std::cout << "Item stored successfully\n";
-        return true;
-    }
-    
-    std::string retrieveContents() {
-        if (m_isLocked) {
-            std::cout << "Cannot retrieve: vault is locked\n";
-            return "";
-        }
-        return m_contents;
-    }
-    
-    bool isLocked() const { return m_isLocked; }
-};
-
-int main() {
-    SecureVault myVault{"secret123"};
-    
-    // myVault.m_passcode = "hacked";  // ❌ Error: private member
-    
-    myVault.storeItem("Gold coins");     // Cannot store: vault is locked
-    
-    myVault.unlock("wrong");             // Wrong passcode! Attempts remaining: 2
-    myVault.unlock("alsowrong");         // Wrong passcode! Attempts remaining: 1
-    myVault.unlock("secret123");         // Vault unlocked!
-    
-    myVault.storeItem("Gold coins");     // Item stored successfully
-    std::cout << "Retrieved: " << myVault.retrieveContents() << '\n';
-    
-    myVault.lock();
-    
-    return 0;
-}
-```
-
-### Benefits of Encapsulation
-
-1. **Data Integrity** - Invalid states prevented by controlled access
-2. **Security** - Sensitive data hidden from outside access
-3. **Maintainability** - Internal implementation can change without affecting users
-4. **Debugging** - Easier to track down issues when data access is controlled
-
----
-
-## 14.4 - Access Functions and Encapsulation
-
-### Well-Designed Accessor Pattern
-
-```cpp
-#include <iostream>
-#include <string>
-#include <stdexcept>
-
-class Temperature {
-private:
-    double m_celsius;
-    
-    // Private helper functions
-    bool isValidCelsius(double temp) const {
-        return temp >= -273.15;  // Absolute zero
-    }
-
-public:
-    // Constructor with validation
-    Temperature(double celsius = 0.0) {
-        if (!isValidCelsius(celsius)) {
-            throw std::invalid_argument("Temperature cannot be below absolute zero");
-        }
-        m_celsius = celsius;
-    }
-    
-    // Read-only accessors (getters)
-    double celsius() const { return m_celsius; }
-    double fahrenheit() const { return (m_celsius * 9.0/5.0) + 32.0; }
-    double kelvin() const { return m_celsius + 273.15; }
-    
-    // Mutator with validation (setter)
-    void setCelsius(double temp) {
-        if (!isValidCelsius(temp)) {
-            throw std::invalid_argument("Invalid temperature");
-        }
-        m_celsius = temp;
-    }
-    
-    void setFahrenheit(double temp) {
-        double celsiusEquivalent = (temp - 32.0) * 5.0/9.0;
-        setCelsius(celsiusEquivalent);  // Reuse validation
-    }
-    
-    void setKelvin(double temp) {
-        setCelsius(temp - 273.15);  // Reuse validation
-    }
-    
-    // Utility functions
-    bool isFreezing() const { return m_celsius <= 0.0; }
-    bool isBoiling() const { return m_celsius >= 100.0; }
-    
-    std::string getState() const {
-        if (m_celsius < 0.0) return "Solid (Ice)";
-        if (m_celsius < 100.0) return "Liquid (Water)";
-        return "Gas (Steam)";
-    }
-    
-    void display() const {
-        std::cout << "Temperature: " << m_celsius << "°C (" 
-                  << fahrenheit() << "°F, " << kelvin() << "K)\n"
-                  << "State: " << getState() << '\n';
     }
 };
 
-int main() {
-    try {
-        Temperature room{22.5};
-        room.display();
-        
-        Temperature hot;
-        hot.setFahrenheit(212.0);  // Boiling point
-        hot.display();
-        
-        // Temperature invalid{-300.0};  // ❌ Throws exception
-        
-        room.setCelsius(0.0);
-        std::cout << "Is freezing: " << (room.isFreezing() ? "Yes" : "No") << '\n';
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n';
-    }
+void demonstrateWeakPtr() {
+    auto parent = std::make_shared<Parent>();
+    auto child = std::make_shared<Child>();
     
-    return 0;
-}
-```
-
-### Member Functions vs Free Functions
-
-```cpp
-#include <iostream>
-#include <cmath>
-
-class Circle {
-private:
-    double m_radius;
-
-public:
-    Circle(double radius) : m_radius{radius} {
-        if (radius <= 0) {
-            throw std::invalid_argument("Radius must be positive");
-        }
-    }
+    parent->setChild(child);
+    child->setParent(parent);  // No circular reference due to weak_ptr
     
-    // Accessor
-    double radius() const { return m_radius; }
+    child->doSomethingWithParent();
     
-    // Mutator  
-    void setRadius(double radius) {
-        if (radius <= 0) {
-            throw std::invalid_argument("Radius must be positive");
-        }
-        m_radius = radius;
-    }
-    
-    // Member functions - operate on this object's data
-    double area() const { return 3.14159 * m_radius * m_radius; }
-    double circumference() const { return 2 * 3.14159 * m_radius; }
-    
-    void scale(double factor) {
-        if (factor <= 0) return;
-        m_radius *= factor;
-    }
-    
-    void display() const {
-        std::cout << "Circle with radius " << m_radius 
-                  << " (area: " << area() << ")\n";
-    }
-};
-
-// Free functions - don't need access to private members
-bool areEqual(const Circle& c1, const Circle& c2) {
-    return std::abs(c1.radius() - c2.radius()) < 0.001;
-}
-
-Circle createUnitCircle() {
-    return Circle{1.0};
-}
-
-double distanceBetweenCenters(const Circle& c1, const Circle& c2) {
-    // This would need coordinate data if we had it
-    return 0.0;  // Simplified example
-}
-
-int main() {
-    Circle small{2.0};
-    Circle large{5.0};
-    
-    small.display();
-    large.display();
-    
-    small.scale(2.0);  // Member function modifies the object
-    std::cout << "After scaling: ";
-    small.display();
-    
-    std::cout << "Circles equal: " << (areEqual(small, large) ? "Yes" : "No") << '\n';
-    
-    Circle unit = createUnitCircle();  // Free function creates object
-    unit.display();
-    
-    return 0;
+    // Both objects properly destroyed when shared_ptrs go out of scope
 }
 ```
 
 ---
 
-## 14.5 - Constructors
+## 24.2 - Move Semantics and Perfect Forwarding
 
-### Default Constructor vs Parameterized Constructor
+### Understanding Value Categories
 
 ```cpp
 #include <iostream>
 #include <string>
+#include <utility>
 
-class Player {
-private:
-    std::string m_name;
-    int m_health;
-    int m_level;
-    double m_experience;
+void demonstrateValueCategories() {
+    std::string str = "Hello";
+    
+    // lvalues (have names, can appear on left of assignment)
+    std::string& lref = str;        // lvalue reference
+    const std::string& clref = str; // const lvalue reference
+    
+    // rvalues (temporary objects, literals)
+    std::string&& rref = std::move(str);  // rvalue reference
+    std::string&& rref2 = "World";        // rvalue reference to temporary
+    
+    // Functions can be overloaded based on value category
+    auto result1 = processString(str);           // Calls lvalue version
+    auto result2 = processString(std::move(str)); // Calls rvalue version
+    auto result3 = processString("literal");      // Calls rvalue version
+}
 
-public:
-    // Default constructor
-    Player() {
-        m_name = "Unknown";
-        m_health = 100;
-        m_level = 1;
-        m_experience = 0.0;
-        std::cout << "Default player created\n";
-    }
-    
-    // Parameterized constructor
-    Player(const std::string& name, int health = 100) {
-        m_name = name;
-        m_health = health;
-        m_level = 1;
-        m_experience = 0.0;
-        std::cout << "Player " << m_name << " created\n";
-    }
-    
-    // Another parameterized constructor
-    Player(const std::string& name, int health, int level, double exp) {
-        m_name = name;
-        m_health = health;
-        m_level = level;
-        m_experience = exp;
-        std::cout << "Experienced player " << m_name << " created\n";
-    }
-    
-    void displayStats() const {
-        std::cout << "Player: " << m_name << " (Level " << m_level 
-                  << ", Health: " << m_health << ", XP: " << m_experience << ")\n";
-    }
-};
+// Overloaded functions for different value categories
+std::string processString(const std::string& s) {  // lvalue version
+    std::cout << "Processing lvalue: " << s << "\n";
+    return s;  // Copy
+}
 
-int main() {
-    Player newbie;                              // Default constructor
-    Player hero{"Link", 120};                   // Parameterized constructor  
-    Player veteran{"Zelda", 150, 10, 9999.0};  // Full parameterized constructor
-    
-    newbie.displayStats();
-    hero.displayStats();
-    veteran.displayStats();
-    
-    return 0;
+std::string processString(std::string&& s) {  // rvalue version
+    std::cout << "Processing rvalue: " << s << "\n";
+    return std::move(s);  // Move
 }
 ```
 
-### Member Initializer Lists (Preferred Method)
+### Move Constructor and Move Assignment
 
 ```cpp
-#include <iostream>
-#include <string>
+#include <vector>
+#include <memory>
+#include <algorithm>
 
-class Book {
+class MovableResource {
 private:
-    const std::string m_title;      // const member - must be initialized
-    const std::string m_author;     // const member - must be initialized  
-    int m_pages;
-    double m_price;
-
-public:
-    // ❌ This won't compile - can't assign to const members in constructor body
-    /*
-    Book(const std::string& title, const std::string& author, int pages, double price) {
-        m_title = title;    // Error: const member
-        m_author = author;  // Error: const member
-        m_pages = pages;
-        m_price = price;
-    }
-    */
+    std::unique_ptr<int[]> data_;
+    size_t size_;
     
-    // ✅ Member initializer list - preferred method
-    Book(const std::string& title, const std::string& author, int pages = 0, double price = 0.0)
-        : m_title{title}, m_author{author}, m_pages{pages}, m_price{price} {
-        // Constructor body can contain additional logic
-        std::cout << "Book \"" << m_title << "\" by " << m_author << " created\n";
-    }
-    
-    // Accessors
-    const std::string& title() const { return m_title; }
-    const std::string& author() const { return m_author; }
-    int pages() const { return m_pages; }
-    double price() const { return m_price; }
-    
-    // Mutators (only for non-const members)
-    void setPages(int pages) { 
-        if (pages >= 0) m_pages = pages; 
-    }
-    void setPrice(double price) { 
-        if (price >= 0.0) m_price = price; 
-    }
-    
-    void displayInfo() const {
-        std::cout << "\"" << m_title << "\" by " << m_author 
-                  << " (" << m_pages << " pages, $" << m_price << ")\n";
-    }
-};
-
-int main() {
-    Book novel{"The Great Gatsby", "F. Scott Fitzgerald", 180, 12.99};
-    Book reference{"C++ Reference", "Unknown Author"};  // Uses defaults
-    
-    novel.displayInfo();
-    reference.displayInfo();
-    
-    reference.setPages(500);
-    reference.setPrice(49.99);
-    reference.displayInfo();
-    
-    return 0;
-}
-```
-
-### Constructor Delegation (C++11)
-
-```cpp
-#include <iostream>
-#include <string>
-
-class Rectangle {
-private:
-    double m_width;
-    double m_height;
-
-public:
-    // Primary constructor
-    Rectangle(double width, double height) : m_width{width}, m_height{height} {
-        if (width <= 0 || height <= 0) {
-            throw std::invalid_argument("Dimensions must be positive");
-        }
-        std::cout << "Rectangle created: " << m_width << "x" << m_height << '\n';
-    }
-    
-    // Delegating constructors - call the primary constructor
-    Rectangle() : Rectangle(1.0, 1.0) {  // Default to unit square
-        std::cout << "Default rectangle created\n";
-    }
-    
-    Rectangle(double side) : Rectangle(side, side) {  // Square constructor
-        std::cout << "Square created\n";
-    }
-    
-    double area() const { return m_width * m_height; }
-    double perimeter() const { return 2 * (m_width + m_height); }
-    
-    void display() const {
-        std::cout << "Rectangle: " << m_width << "x" << m_height 
-                  << " (area: " << area() << ")\n";
-    }
-};
-
-int main() {
-    try {
-        Rectangle unit;           // Default constructor -> delegates to Rectangle(1.0, 1.0)
-        Rectangle square{5.0};    // Square constructor -> delegates to Rectangle(5.0, 5.0)
-        Rectangle rect{3.0, 4.0}; // Direct constructor call
-        
-        unit.display();
-        square.display();
-        rect.display();
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n';
-    }
-    
-    return 0;
-}
-```
-
----
-
-## 14.6 - Destructors
-
-### Automatic Resource Management
-
-```cpp
-#include <iostream>
-#include <string>
-
-class FileHandler {
-private:
-    std::string m_filename;
-    bool m_isOpen;
-
 public:
     // Constructor
-    FileHandler(const std::string& filename) : m_filename{filename}, m_isOpen{false} {
-        std::cout << "FileHandler created for: " << m_filename << '\n';
-        // In real implementation, would open file here
-        m_isOpen = true;
-        std::cout << "File opened: " << m_filename << '\n';
-    }
-    
-    // Destructor - called automatically when object goes out of scope
-    ~FileHandler() {
-        std::cout << "FileHandler destructor called for: " << m_filename << '\n';
-        if (m_isOpen) {
-            // In real implementation, would close file here
-            std::cout << "File closed: " << m_filename << '\n';
-            m_isOpen = false;
-        }
-        std::cout << "FileHandler destroyed\n";
-    }
-    
-    void writeData(const std::string& data) {
-        if (m_isOpen) {
-            std::cout << "Writing to " << m_filename << ": " << data << '\n';
+    explicit MovableResource(size_t size) 
+        : data_(std::make_unique<int[]>(size)), size_(size) {
+        std::cout << "Constructor: allocated " << size_ << " elements\n";
+        
+        // Initialize with some values
+        for (size_t i = 0; i < size_; ++i) {
+            data_[i] = static_cast<int>(i);
         }
     }
     
-    bool isOpen() const { return m_isOpen; }
+    // Copy constructor (expensive)
+    MovableResource(const MovableResource& other) 
+        : data_(std::make_unique<int[]>(other.size_)), size_(other.size_) {
+        std::cout << "Copy constructor: copying " << size_ << " elements\n";
+        std::copy(other.data_.get(), other.data_.get() + size_, data_.get());
+    }
+    
+    // Move constructor (cheap)
+    MovableResource(MovableResource&& other) noexcept 
+        : data_(std::move(other.data_)), size_(other.size_) {
+        std::cout << "Move constructor: transferred " << size_ << " elements\n";
+        other.size_ = 0;  // Reset moved-from object
+    }
+    
+    // Copy assignment operator
+    MovableResource& operator=(const MovableResource& other) {
+        if (this != &other) {
+            std::cout << "Copy assignment: copying " << other.size_ << " elements\n";
+            data_ = std::make_unique<int[]>(other.size_);
+            size_ = other.size_;
+            std::copy(other.data_.get(), other.data_.get() + size_, data_.get());
+        }
+        return *this;
+    }
+    
+    // Move assignment operator
+    MovableResource& operator=(MovableResource&& other) noexcept {
+        if (this != &other) {
+            std::cout << "Move assignment: transferred " << other.size_ << " elements\n";
+            data_ = std::move(other.data_);
+            size_ = other.size_;
+            other.size_ = 0;
+        }
+        return *this;
+    }
+    
+    size_t size() const { return size_; }
+    int& operator[](size_t index) { return data_[index]; }
+    const int& operator[](size_t index) const { return data_[index]; }
 };
 
-void processFiles() {
-    std::cout << "=== Entering processFiles() ===\n";
+void demonstrateMoveSemantics() {
+    std::vector<MovableResource> resources;
     
-    FileHandler config{"config.txt"};      // Constructor called
-    FileHandler log{"application.log"};    // Constructor called
+    // Move construction
+    resources.push_back(MovableResource(1000));  // Temporary object moved
     
-    config.writeData("server_port=8080");
-    log.writeData("Application started");
+    MovableResource large(2000);
+    resources.push_back(std::move(large));       // Explicit move
     
-    std::cout << "=== Leaving processFiles() ===\n";
-    // Destructors called automatically as objects go out of scope
-    // Order: log destroyed first (LIFO), then config
-}
-
-int main() {
-    std::cout << "=== Main function start ===\n";
+    // Move in algorithms
+    std::vector<MovableResource> moved_resources;
+    moved_resources.reserve(resources.size());
     
-    processFiles();  // Objects created and destroyed within this function
-    
-    std::cout << "=== Back in main ===\n";
-    
-    {
-        std::cout << "--- Entering block scope ---\n";
-        FileHandler temp{"temp.dat"};
-        temp.writeData("temporary data");
-        std::cout << "--- Leaving block scope ---\n";
-        // temp destructor called here
-    }
-    
-    std::cout << "=== Main function end ===\n";
-    
-    return 0;
+    std::move(resources.begin(), resources.end(), 
+              std::back_inserter(moved_resources));
 }
 ```
 
-### RAII (Resource Acquisition Is Initialization)
+### Perfect Forwarding with std::forward
 
 ```cpp
 #include <iostream>
 #include <memory>
+#include <utility>
 
-class DatabaseConnection {
-private:
-    std::string m_connectionString;
-    bool m_connected;
-
+class Widget {
 public:
-    DatabaseConnection(const std::string& connStr) 
-        : m_connectionString{connStr}, m_connected{false} {
-        // Acquire resource in constructor
-        std::cout << "Connecting to database: " << m_connectionString << '\n';
-        m_connected = true;
-        std::cout << "Database connection established\n";
+    Widget() { std::cout << "Widget default constructor\n"; }
+    Widget(const Widget&) { std::cout << "Widget copy constructor\n"; }
+    Widget(Widget&&) noexcept { std::cout << "Widget move constructor\n"; }
+    
+    explicit Widget(int value) { 
+        std::cout << "Widget constructor with value: " << value << "\n"; 
     }
     
-    ~DatabaseConnection() {
-        // Release resource in destructor
-        if (m_connected) {
-            std::cout << "Closing database connection: " << m_connectionString << '\n';
-            m_connected = false;
-        }
-    }
-    
-    // Delete copy constructor and copy assignment to prevent copying
-    DatabaseConnection(const DatabaseConnection&) = delete;
-    DatabaseConnection& operator=(const DatabaseConnection&) = delete;
-    
-    void executeQuery(const std::string& query) {
-        if (m_connected) {
-            std::cout << "Executing query: " << query << '\n';
-        } else {
-            std::cout << "Error: Not connected to database\n";
-        }
-    }
-    
-    bool isConnected() const { return m_connected; }
-};
-
-class DataProcessor {
-private:
-    DatabaseConnection m_dbConn;
-
-public:
-    DataProcessor(const std::string& dbConnStr) : m_dbConn{dbConnStr} {
-        std::cout << "DataProcessor initialized\n";
-    }
-    
-    ~DataProcessor() {
-        std::cout << "DataProcessor shutting down\n";
-        // m_dbConn destructor called automatically
-    }
-    
-    void processUserData(int userId) {
-        m_dbConn.executeQuery("SELECT * FROM users WHERE id = " + std::to_string(userId));
-        // Process data...
-        m_dbConn.executeQuery("UPDATE users SET last_access = NOW() WHERE id = " + std::to_string(userId));
+    Widget(const std::string& name, int value) {
+        std::cout << "Widget constructor: " << name << ", " << value << "\n";
     }
 };
 
-int main() {
-    std::cout << "=== Application Start ===\n";
+// Factory function with perfect forwarding
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique_perfect(Args&&... args) {
+    return std::make_unique<T>(std::forward<Args>(args)...);
+}
+
+// Wrapper that forwards arguments perfectly
+template<typename F, typename... Args>
+decltype(auto) call_with_timing(F&& func, Args&&... args) {
+    auto start = std::chrono::high_resolution_clock::now();
     
-    try {
-        DataProcessor processor{"postgresql://localhost:5432/mydb"};
-        processor.processUserData(12345);
-        
-        std::cout << "=== Processing Complete ===\n";
-        
-        // When processor goes out of scope:
-        // 1. DataProcessor destructor called
-        // 2. DatabaseConnection destructor called automatically
-        // 3. All resources properly cleaned up
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n';
-    }
+    // Perfect forwarding preserves value categories
+    decltype(auto) result = std::forward<F>(func)(std::forward<Args>(args)...);
     
-    std::cout << "=== Application End ===\n";
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    std::cout << "Function took " << duration.count() << " microseconds\n";
     
-    return 0;
+    return result;
+}
+
+void demonstratePerfectForwarding() {
+    // Perfect forwarding in factory functions
+    auto widget1 = make_unique_perfect<Widget>();                    // Default construction
+    auto widget2 = make_unique_perfect<Widget>(42);                  // Value construction
+    auto widget3 = make_unique_perfect<Widget>("Test", 100);         // Multi-argument
+    
+    // Perfect forwarding with function wrappers
+    Widget w;
+    auto result = call_with_timing([](const Widget& w) { return w; }, w);         // lvalue
+    auto result2 = call_with_timing([](Widget w) { return w; }, std::move(w));    // rvalue
 }
 ```
 
 ---
 
-## 14.7 - The Hidden "this" Pointer
+## 25.1 - Lambda Expressions and Functional Programming
 
-### Understanding Object Identity
-
-```cpp
-#include <iostream>
-#include <string>
-
-class Counter {
-private:
-    int m_value;
-    std::string m_name;
-
-public:
-    Counter(const std::string& name, int initial = 0) 
-        : m_name{name}, m_value{initial} {}
-    
-    // Method that doesn't use 'this' explicitly
-    void increment() {
-        ++m_value;  // Equivalent to: ++(this->m_value);
-        std::cout << m_name << " incremented to " << m_value << '\n';
-    }
-    
-    // Method that explicitly uses 'this'
-    Counter& add(int amount) {
-        this->m_value += amount;  // Explicit use of 'this'
-        return *this;             // Return reference to current object
-    }
-    
-    // Method chaining using 'this'
-    Counter& multiply(int factor) {
-        m_value *= factor;
-        return *this;  // Enable chaining: counter.multiply(2).add(5)
-    }
-    
-    // Compare with another Counter
-    bool isGreaterThan(const Counter& other) const {
-        return this->m_value > other.m_value;
-        // Could also write: return m_value > other.m_value;
-    }
-    
-    // Self-assignment check (useful in copy assignment operator)
-    Counter& copyFrom(const Counter& other) {
-        if (this == &other) {  // Check for self-assignment
-            std::cout << "Self-assignment detected, no operation performed\n";
-            return *this;
-        }
-        
-        this->m_value = other.m_value;
-        std::cout << m_name << " copied value from " << other.m_name << '\n';
-        return *this;
-    }
-    
-    int getValue() const { return m_value; }
-    const std::string& getName() const { return m_name; }
-    
-    void display() const {
-        std::cout << m_name << ": " << m_value << " (object at " << this << ")\n";
-    }
-};
-
-int main() {
-    Counter alpha{"Alpha", 10};
-    Counter beta{"Beta", 5};
-    
-    std::cout << "Initial state:\n";
-    alpha.display();  // Shows object address
-    beta.display();   // Different object address
-    
-    // Method chaining using returned *this
-    alpha.add(5).multiply(2).add(3);  // 10 + 5 = 15, 15 * 2 = 30, 30 + 3 = 33
-    std::cout << "After chaining: " << alpha.getValue() << '\n';
-    
-    // Comparison using 'this'
-    if (alpha.isGreaterThan(beta)) {
-        std::cout << alpha.getName() << " is greater than " << beta.getName() << '\n';
-    }
-    
-    // Self-assignment
-    alpha.copyFrom(alpha);  // Detects self-assignment
-    
-    // Copy from other
-    beta.copyFrom(alpha);
-    
-    alpha.display();
-    beta.display();
-    
-    return 0;
-}
-```
-
-### When to Use 'this' Explicitly
-
-```cpp
-#include <iostream>
-#include <string>
-
-class Person {
-private:
-    std::string m_name;
-    int m_age;
-
-public:
-    Person(const std::string& name, int age) : m_name{name}, m_age{age} {}
-    
-    // Case 1: Parameter name conflicts with member name
-    void setName(const std::string& name) {
-        this->m_name = name;  // 'this->' needed to distinguish from parameter
-        // Without 'this->': name = name; would assign parameter to itself!
-    }
-    
-    void setAge(int age) {
-        this->m_age = age;    // 'this->' needed to distinguish from parameter
-    }
-    
-    // Case 2: Method chaining
-    Person& changeName(const std::string& name) {
-        m_name = name;        // 'this->' not needed here (no naming conflict)
-        return *this;         // 'this' needed to return current object
-    }
-    
-    Person& changeAge(int age) {
-        this->m_age = age;    // 'this->' used for consistency
-        return *this;
-    }
-    
-    // Case 3: Self-comparison or operations
-    bool isSamePersonAs(const Person& other) const {
-        return this == &other;  // Comparing object addresses
-    }
-    
-    bool isOlderThan(const Person& other) const {
-        return m_age > other.m_age;  // 'this->' not needed - no ambiguity
-        // Could write: return this->m_age > other.m_age;
-    }
-    
-    void display() const {
-        std::cout << "Name: " << m_name << ", Age: " << m_age << '\n';
-    }
-};
-
-int main() {
-    Person john{"John", 25};
-    Person jane{"Jane", 30};
-    
-    john.display();
-    
-    // Method chaining
-    john.changeName("Johnny").changeAge(26);
-    john.display();
-    
-    // Self-comparison
-    std::cout << "john same as john: " << (john.isSamePersonAs(john) ? "Yes" : "No") << '\n';
-    std::cout << "john same as jane: " << (john.isSamePersonAs(jane) ? "Yes" : "No") << '\n';
-    
-    return 0;
-}
-```
-
----
-
-## 14.8 - Class Code and Header Files
-
-### Separating Interface from Implementation
-
-**Rectangle.h** (Header file - Interface)
-```cpp
-#ifndef RECTANGLE_H
-#define RECTANGLE_H
-
-#include <iostream>
-
-class Rectangle {
-private:
-    double m_width;
-    double m_height;
-
-public:
-    // Constructor declarations
-    Rectangle(double width, double height);
-    Rectangle();  // Default constructor
-    
-    // Accessor declarations
-    double getWidth() const;
-    double getHeight() const;
-    double area() const;
-    double perimeter() const;
-    
-    // Mutator declarations
-    void setWidth(double width);
-    void setHeight(double height);
-    void scale(double factor);
-    
-    // Utility function declarations
-    void display() const;
-    bool isSquare() const;
-};
-
-#endif
-```
-
-**Rectangle.cpp** (Implementation file)
-```cpp
-#include "Rectangle.h"
-#include <stdexcept>
-
-// Constructor definitions
-Rectangle::Rectangle(double width, double height) : m_width{width}, m_height{height} {
-    if (width <= 0 || height <= 0) {
-        throw std::invalid_argument("Dimensions must be positive");
-    }
-}
-
-Rectangle::Rectangle() : Rectangle(1.0, 1.0) {
-    // Delegates to parameterized constructor
-}
-
-// Accessor definitions
-double Rectangle::getWidth() const {
-    return m_width;
-}
-
-double Rectangle::getHeight() const {
-    return m_height;
-}
-
-double Rectangle::area() const {
-    return m_width * m_height;
-}
-
-double Rectangle::perimeter() const {
-    return 2.0 * (m_width + m_height);
-}
-
-// Mutator definitions
-void Rectangle::setWidth(double width) {
-    if (width <= 0) {
-        throw std::invalid_argument("Width must be positive");
-    }
-    m_width = width;
-}
-
-void Rectangle::setHeight(double height) {
-    if (height <= 0) {
-        throw std::invalid_argument("Height must be positive");
-    }
-    m_height = height;
-}
-
-void Rectangle::scale(double factor) {
-    if (factor <= 0) {
-        throw std::invalid_argument("Scale factor must be positive");
-    }
-    m_width *= factor;
-    m_height *= factor;
-}
-
-// Utility function definitions
-void Rectangle::display() const {
-    std::cout << "Rectangle: " << m_width << "x" << m_height 
-              << " (area: " << area() << ", perimeter: " << perimeter() << ")\n";
-}
-
-bool Rectangle::isSquare() const {
-    const double EPSILON = 0.0001;
-    return std::abs(m_width - m_height) < EPSILON;
-}
-```
-
-**main.cpp** (Using the class)
-```cpp
-#include "Rectangle.h"
-#include <iostream>
-#include <stdexcept>
-
-int main() {
-    try {
-        Rectangle rect1{5.0, 3.0};
-        Rectangle rect2;  // Default constructor
-        
-        rect1.display();
-        rect2.display();
-        
-        rect1.scale(1.5);
-        rect1.display();
-        
-        rect2.setWidth(4.0);
-        rect2.setHeight(4.0);
-        
-        std::cout << "rect2 is square: " << (rect2.isSquare() ? "Yes" : "No") << '\n';
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n';
-    }
-    
-    return 0;
-}
-```
-
-### Inline Functions in Headers
-
-```cpp
-// Timer.h
-#ifndef TIMER_H
-#define TIMER_H
-
-#include <chrono>
-#include <iostream>
-
-class Timer {
-private:
-    std::chrono::steady_clock::time_point m_startTime;
-    bool m_running;
-
-public:
-    Timer() : m_running{false} {}
-    
-    // Simple functions can be defined inline in header
-    void start() {
-        m_startTime = std::chrono::steady_clock::now();
-        m_running = true;
-    }
-    
-    void stop() {
-        m_running = false;
-    }
-    
-    bool isRunning() const { return m_running; }
-    
-    // More complex function - declare here, define in .cpp
-    double getElapsedSeconds() const;
-    void displayElapsed() const;
-};
-
-// Inline function definition (alternative to defining in class body)
-inline void Timer::displayElapsed() const {
-    std::cout << "Elapsed time: " << getElapsedSeconds() << " seconds\n";
-}
-
-#endif
-```
-
-**Timer.cpp**
-```cpp
-#include "Timer.h"
-
-double Timer::getElapsedSeconds() const {
-    if (!m_running) {
-        return 0.0;
-    }
-    
-    auto currentTime = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        currentTime - m_startTime);
-    
-    return elapsed.count() / 1000.0;
-}
-```
-
----
-
-## Real-World Applications
-
-### Game Entity System
-
-```cpp
-// GameEntity.h
-#ifndef GAME_ENTITY_H
-#define GAME_ENTITY_H
-
-#include <string>
-
-class GameEntity {
-private:
-    static int s_nextId;
-    
-    int m_id;
-    std::string m_name;
-    double m_x, m_y;
-    int m_health;
-    int m_maxHealth;
-    bool m_isActive;
-
-public:
-    // Constructors
-    GameEntity(const std::string& name, double x = 0.0, double y = 0.0, int maxHealth = 100);
-    ~GameEntity();
-    
-    // Accessors
-    int getId() const { return m_id; }
-    const std::string& getName() const { return m_name; }
-    double getX() const { return m_x; }
-    double getY() const { return m_y; }
-    int getHealth() const { return m_health; }
-    int getMaxHealth() const { return m_maxHealth; }
-    bool isActive() const { return m_isActive; }
-    bool isAlive() const { return m_health > 0; }
-    
-    // Mutators
-    void setPosition(double x, double y);
-    void move(double deltaX, double deltaY);
-    void takeDamage(int damage);
-    void heal(int amount);
-    void setActive(bool active) { m_isActive = active; }
-    
-    // Utility functions
-    double distanceTo(const GameEntity& other) const;
-    void displayStatus() const;
-    
-    // Static function
-    static int getTotalEntities() { return s_nextId - 1; }
-};
-
-#endif
-```
-
-### Bank Account with Transaction History
-
-```cpp
-// BankAccount.h
-#ifndef BANK_ACCOUNT_H
-#define BANK_ACCOUNT_H
-
-#include <string>
-#include <vector>
-
-struct Transaction {
-    enum Type { Deposit, Withdrawal, Transfer };
-    Type type;
-    double amount;
-    std::string description;
-    std::string timestamp;
-};
-
-class BankAccount {
-private:
-    std::string m_accountNumber;
-    std::string m_ownerName;
-    double m_balance;
-    std::vector<Transaction> m_transactions;
-    static double s_interestRate;
-
-public:
-    BankAccount(const std::string& accountNumber, const std::string& ownerName, 
-                double initialDeposit = 0.0);
-    
-    // Account operations
-    bool deposit(double amount, const std::string& description = "Deposit");
-    bool withdraw(double amount, const std::string& description = "Withdrawal");
-    bool transferTo(BankAccount& recipient, double amount, 
-                   const std::string& description = "Transfer");
-    
-    // Interest calculation
-    void applyInterest();
-    static void setInterestRate(double rate) { s_interestRate = rate; }
-    static double getInterestRate() { return s_interestRate; }
-    
-    // Account information
-    double getBalance() const { return m_balance; }
-    const std::string& getAccountNumber() const { return m_accountNumber; }
-    const std::string& getOwnerName() const { return m_ownerName; }
-    
-    // Transaction history
-    void displayTransactionHistory() const;
-    void displayAccountSummary() const;
-    
-private:
-    void addTransaction(Transaction::Type type, double amount, const std::string& description);
-    std::string getCurrentTimestamp() const;
-};
-
-#endif
-```
-
----
-
-## Best Practices and Modern Usage
-
-### Do's ✅
-
-1. **Use member initializer lists**:
-```cpp
-class Point {
-    double m_x, m_y;
-public:
-    Point(double x, double y) : m_x{x}, m_y{y} {}  // ✅ Efficient initialization
-};
-```
-
-2. **Make single-argument constructors explicit**:
-```cpp
-class Temperature {
-public:
-    explicit Temperature(double celsius) : m_celsius{celsius} {}  // ✅ Prevents implicit conversion
-};
-```
-
-3. **Use const for read-only member functions**:
-```cpp
-class Circle {
-public:
-    double area() const { return 3.14159 * m_radius * m_radius; }  // ✅ const-correct
-};
-```
-
-4. **Follow RAII principle**:
-```cpp
-class FileHandler {
-public:
-    FileHandler(const std::string& filename) { /* acquire resource */ }
-    ~FileHandler() { /* release resource */ }  // ✅ Automatic cleanup
-};
-```
-
-### Don'ts ❌
-
-1. **Don't make everything public**:
-```cpp
-class BadClass {
-public:
-    int importantData;  // ❌ Should be private with accessors
-};
-```
-
-2. **Don't forget const-correctness**:
-```cpp
-class Circle {
-public:
-    double area() { return 3.14159 * m_radius * m_radius; }  // ❌ Should be const
-};
-```
-
-3. **Don't use assignment in constructor body for const members**:
-```cpp
-class Book {
-    const std::string m_title;
-public:
-    Book(const std::string& title) {
-        m_title = title;  // ❌ Error: can't assign to const
-    }
-};
-```
-
-### Modern C++ Features
-
-```cpp
-// C++11: Default and delete
-class NonCopyable {
-public:
-    NonCopyable() = default;                           // ✅ Explicitly defaulted
-    NonCopyable(const NonCopyable&) = delete;         // ✅ Explicitly deleted
-    NonCopyable& operator=(const NonCopyable&) = delete;
-};
-
-// C++11: Delegating constructors
-class Rectangle {
-public:
-    Rectangle(double w, double h) : m_width{w}, m_height{h} {}
-    Rectangle() : Rectangle(1.0, 1.0) {}              // ✅ Delegates to main constructor
-};
-
-// C++14: Auto return type deduction
-class Calculator {
-public:
-    auto add(double a, double b) const { return a + b; }  // ✅ Auto deduced as double
-};
-```
-
----
-
-## Conclusion
-
-Object-Oriented Programming with classes provides:
-
-- **Encapsulation** - Bundle data and behavior together
-- **Data Protection** - Control access through public/private
-- **Automatic Resource Management** - RAII with constructors/destructors
-- **Code Reusability** - Objects can be used in multiple contexts
-- **Maintainability** - Changes to internal implementation don't affect users
-- **Type Safety** - Custom types prevent misuse
-
-Classes transform passive data structures into intelligent objects that can manage their own state and behavior. This foundation enables advanced OOP concepts like inheritance and polymorphism covered in later chapters.
-
-**Next: Chapter 15 - More on Classes (Operator Overloading, Friend Functions, Static Members)**
-
-# Chapter 13: Enumerations and Structs - Building User-Defined Types
-
-## Building from Pointers & References: Creating Your Own Types
-
-In Chapter 12, we mastered compound data types that work with existing types. Now we'll learn to create our own **user-defined types** using enumerations and structs. These are the building blocks for object-oriented programming and essential for creating meaningful, type-safe code.
-
----
-
-## 13.1 - Introduction to Program-Defined (User-Defined) Types
-
-### The Need for Custom Types
-
-Consider representing different states in a game:
-
-```cpp
-// Using magic numbers (bad approach)
-int gameState = 0;    // What does 0 mean?
-int playerState = 2;  // What does 2 mean?
-
-if (gameState == 1) { /* do something */ }  // Magic number - unclear!
-```
-
-### What Are Program-Defined Types?
-
-**Program-defined types** (also called user-defined types) are custom types that we create for use in our own programs:
-
-```cpp
-// Better approach with user-defined types
-enum class GameState 
-{
-    menu,
-    playing,
-    paused,
-    gameOver
-};
-
-struct Player 
-{
-    std::string name;
-    int health;
-    int score;
-};
-
-GameState currentState = GameState::playing;  // Clear and type-safe!
-Player hero { "Link", 100, 0 };
-```
-
-### Categories of Program-Defined Types
-
-1. **Enumerated types** (unscoped and scoped enumerations)
-2. **Class types** (including structs, classes, and unions)
-
-Both must be **defined before use** and require a **type definition**.
-
----
-
-## 13.2 - Unscoped Enumerations
-
-### Basic Unscoped Enumerations
-
-An enumeration (enum) defines a set of named integral constants:
-
-```cpp
-#include <iostream>
-
-// Define an enumeration for colors
-enum Color 
-{
-    red,      // assigned value 0
-    green,    // assigned value 1  
-    blue,     // assigned value 2
-    yellow    // assigned value 3
-};
-
-int main() 
-{
-    Color paint = red;        // paint now holds the value corresponding to red
-    Color house = green;      // house now holds the value corresponding to green
-    Color apple = red;        // apple now holds the value corresponding to red
-    
-    std::cout << "Paint color: " << paint << '\n';  // prints 0
-    std::cout << "House color: " << house << '\n';  // prints 1
-    
-    return 0;
-}
-```
-
-### Explicit Value Assignment
-
-You can explicitly assign values to enumerators:
-
-```cpp
-enum Status 
-{
-    ready = 10,      // explicitly assigned 10
-    waiting,         // assigned 11 (10 + 1)
-    processing = 25, // explicitly assigned 25  
-    complete         // assigned 26 (25 + 1)
-};
-
-enum Priority 
-{
-    low = 1,
-    medium = 5,
-    high = 10,
-    critical = 20
-};
-
-int main() 
-{
-    Status currentStatus = processing;
-    Priority taskPriority = high;
-    
-    std::cout << "Status: " << currentStatus << '\n';    // prints 25
-    std::cout << "Priority: " << taskPriority << '\n';   // prints 10
-    
-    return 0;
-}
-```
-
-### Problems with Unscoped Enumerations
-
-#### 1. Namespace Pollution
-
-```cpp
-enum Animal 
-{
-    cat,
-    dog,
-    bird
-};
-
-enum Transport 
-{
-    car,
-    // cat,   // ❌ Error: 'cat' already declared!
-    plane
-};
-
-int main() 
-{
-    // Enumerators are in global scope
-    Animal pet = cat;       // ✅ Works
-    Transport vehicle = car; // ✅ Works
-    
-    return 0;
-}
-```
-
-#### 2. Unwanted Implicit Conversions
-
-```cpp
-enum Color { red, blue };
-enum Fruit { banana, apple };
-
-int main() 
-{
-    Color color = red;      // red = 0
-    Fruit fruit = banana;   // banana = 0
-    
-    if (color == fruit)     // ❌ This compiles but makes no sense!
-    {
-        std::cout << "Color and fruit are equal!\n"; // This prints!
-    }
-    
-    // Even worse:
-    Color paint = red;
-    int number = paint + 5;  // ❌ Unwanted implicit conversion
-    
-    return 0;
-}
-```
-
----
-
-## 13.6 - Scoped Enumerations (enum class)
-
-### The Solution: Scoped Enumerations
-
-**Scoped enumerations** (enum class) solve the problems of unscoped enumerations:
-
-```cpp
-#include <iostream>
-
-enum class Color 
-{
-    red,      // Color::red
-    green,    // Color::green
-    blue      // Color::blue
-};
-
-enum class Fruit 
-{
-    apple,    // Fruit::apple
-    banana,   // Fruit::banana  
-    orange    // Fruit::orange
-};
-
-int main() 
-{
-    Color paint = Color::red;       // ✅ Must use scope resolution
-    Fruit snack = Fruit::apple;     // ✅ Must use scope resolution
-    
-    // These no longer compile (good!):
-    // if (paint == snack) {}       // ❌ Error: can't compare different enum types
-    // int value = paint;           // ❌ Error: no implicit conversion to int
-    
-    // This works (same type comparison):
-    if (paint == Color::red) 
-    {
-        std::cout << "Paint is red!\n";
-    }
-    
-    return 0;
-}
-```
-
-### Explicit Conversions When Needed
-
-Sometimes you need the underlying integer value:
-
-```cpp
-#include <iostream>
-#include <utility>  // for std::to_underlying (C++23)
-
-enum class ErrorCode 
-{
-    none = 0,
-    fileNotFound = 404,
-    serverError = 500,
-    timeout = 408
-};
-
-void logError(ErrorCode code) 
-{
-    // Method 1: static_cast (all C++ versions)
-    std::cout << "Error code: " << static_cast<int>(code) << '\n';
-    
-    // Method 2: std::to_underlying (C++23 - preferred)
-    // std::cout << "Error code: " << std::to_underlying(code) << '\n';
-}
-
-int main() 
-{
-    ErrorCode error = ErrorCode::fileNotFound;
-    logError(error);  // prints: Error code: 404
-    
-    return 0;
-}
-```
-
-### Modern C++20: using enum Statements
-
-Reduce repetition in switch statements:
-
-```cpp
-#include <iostream>
-#include <string_view>
-
-enum class Direction 
-{
-    north,
-    south,
-    east,
-    west
-};
-
-std::string_view getDirectionName(Direction dir) 
-{
-    using enum Direction;  // C++20: Import all enumerators
-    
-    switch (dir) 
-    {
-        case north: return "North";  // No need for Direction::north
-        case south: return "South";
-        case east:  return "East";
-        case west:  return "West";
-        default:    return "Unknown";
-    }
-}
-
-int main() 
-{
-    Direction playerDirection = Direction::north;
-    std::cout << "Moving " << getDirectionName(playerDirection) << '\n';
-    
-    return 0;
-}
-```
-
----
-
-## 13.7 - Introduction to Structs
-
-### The Problem: Related Data Scattered
-
-Imagine tracking employee information with separate variables:
-
-```cpp
-// Problematic approach
-std::string employeeName;
-std::string employeeTitle;
-int employeeAge;
-int employeeId;
-double employeeWage;
-
-// Hard to manage, pass to functions, or scale to multiple employees!
-```
-
-### The Solution: Structs
-
-A **struct** bundles related variables together into a single type:
-
-```cpp
-#include <iostream>
-#include <string>
-
-// Define the Employee struct type
-struct Employee 
-{
-    int id{};           // Data member (value-initialized)
-    std::string name;   // Data member
-    std::string title;  // Data member
-    int age{};         // Data member  
-    double wage{};     // Data member
-};
-
-int main() 
-{
-    // Create Employee objects
-    Employee joe{};     // All members value-initialized
-    Employee sarah{};   // Separate Employee object
-    
-    // Access members using the dot operator
-    joe.id = 101;
-    joe.name = "Joe Smith";
-    joe.title = "Developer";
-    joe.age = 32;
-    joe.wage = 75000.0;
-    
-    sarah.id = 102;
-    sarah.name = "Sarah Johnson";
-    sarah.title = "Manager";
-    sarah.age = 28;
-    sarah.wage = 85000.0;
-    
-    // Use the data
-    std::cout << joe.name << " (ID: " << joe.id << ") earns $" << joe.wage << '\n';
-    std::cout << sarah.name << " (ID: " << sarah.id << ") earns $" << sarah.wage << '\n';
-    
-    if (sarah.wage > joe.wage) 
-    {
-        std::cout << sarah.name << " earns more than " << joe.name << '\n';
-    }
-    
-    return 0;
-}
-```
-
----
-
-## 13.8 - Struct Aggregate Initialization
-
-### List Initialization of Structs
-
-You can initialize struct members directly using brace initialization:
-
-```cpp
-#include <iostream>
-#include <string>
-
-struct Point3D 
-{
-    double x{};
-    double y{};
-    double z{};
-};
-
-struct RGB 
-{
-    int red{};
-    int green{};  
-    int blue{};
-};
-
-int main() 
-{
-    // Aggregate initialization
-    Point3D origin{};              // All members = 0.0
-    Point3D position{1.5, 2.7, 3.2}; // x=1.5, y=2.7, z=3.2
-    
-    RGB white{255, 255, 255};      // red=255, green=255, blue=255
-    RGB red{255, 0, 0};            // red=255, green=0, blue=0
-    RGB partialColor{100};         // red=100, green=0, blue=0
-    
-    std::cout << "Position: (" << position.x << ", " << position.y << ", " << position.z << ")\n";
-    std::cout << "Red color: RGB(" << red.red << ", " << red.green << ", " << red.blue << ")\n";
-    
-    return 0;
-}
-```
-
-### Designated Initializers (C++20)
-
-Make initialization more explicit and readable:
-
-```cpp
-#include <iostream>
-#include <string>
-
-struct Car 
-{
-    std::string brand;
-    std::string model;
-    int year{};
-    double price{};
-    bool isElectric{};
-};
-
-int main() 
-{
-    // C++20 designated initializers
-    Car tesla {
-        .brand = "Tesla",
-        .model = "Model 3",
-        .year = 2023,
-        .price = 35000.0,
-        .isElectric = true
-    };
-    
-    Car honda {
-        .brand = "Honda",
-        .model = "Civic",
-        .year = 2022,
-        .price = 23000.0
-        // isElectric defaults to false
-    };
-    
-    std::cout << tesla.brand << " " << tesla.model << " (" << tesla.year << ")\n";
-    std::cout << "Electric: " << (tesla.isElectric ? "Yes" : "No") << "\n";
-    
-    return 0;
-}
-```
-
----
-
-## 13.9 - Default Member Initialization
-
-### Setting Default Values in the Struct Definition
-
-You can provide default values for struct members:
-
-```cpp
-#include <iostream>
-#include <string>
-
-struct GameCharacter 
-{
-    std::string name = "Unknown";    // Default value
-    int health = 100;               // Default value
-    int mana = 50;                  // Default value
-    int level = 1;                  // Default value
-    bool isAlive = true;            // Default value
-};
-
-int main() 
-{
-    // Use defaults
-    GameCharacter npc{};
-    std::cout << "NPC: " << npc.name << ", Health: " << npc.health << '\n';
-    
-    // Override some defaults
-    GameCharacter hero{"Link", 120, 75, 5};  // name, health, mana, level
-    std::cout << "Hero: " << hero.name << ", Level: " << hero.level << '\n';
-    
-    // Override specific members (C++20 designated initializers)
-    GameCharacter boss{
-        .name = "Ganondorf",
-        .health = 500,
-        .level = 50
-        // mana, isAlive use defaults
-    };
-    
-    std::cout << "Boss: " << boss.name << ", Health: " << boss.health 
-              << ", Mana: " << boss.mana << '\n';
-    
-    return 0;
-}
-```
-
----
-
-## 13.10 - Passing and Returning Structs
-
-### Efficient Function Parameters
-
-Use const references to avoid copying large structs:
-
-```cpp
-#include <iostream>
-#include <string>
-
-struct Student 
-{
-    std::string name;
-    int id{};
-    double gpa{};
-    std::string major;
-};
-
-// ❌ Inefficient: copies the entire struct
-void displayStudentCopy(Student s) 
-{
-    std::cout << s.name << " (ID: " << s.id << ", GPA: " << s.gpa << ")\n";
-}
-
-// ✅ Efficient: passes by const reference
-void displayStudent(const Student& s) 
-{
-    std::cout << s.name << " (ID: " << s.id << ", GPA: " << s.gpa << ")\n";
-}
-
-// ✅ Modify struct through non-const reference
-void updateGPA(Student& s, double newGPA) 
-{
-    s.gpa = newGPA;
-}
-
-// ✅ Return struct by value (modern compilers optimize this)
-Student createStudent(const std::string& name, int id, double gpa, const std::string& major) 
-{
-    return Student{name, id, gpa, major};
-}
-
-int main() 
-{
-    Student alice = createStudent("Alice Johnson", 12345, 3.85, "Computer Science");
-    
-    displayStudent(alice);        // Efficient const reference
-    
-    updateGPA(alice, 3.92);       // Modify through reference
-    displayStudent(alice);        // Show updated GPA
-    
-    return 0;
-}
-```
-
-### Returning Multiple Values with Structs
-
-```cpp
-#include <iostream>
-#include <cmath>
-
-struct Coordinates 
-{
-    double x;
-    double y;
-};
-
-struct PolarCoordinates 
-{
-    double radius;
-    double angle;  // in radians
-};
-
-// Convert Cartesian to Polar coordinates
-PolarCoordinates toPolar(const Coordinates& cartesian) 
-{
-    double radius = std::sqrt(cartesian.x * cartesian.x + cartesian.y * cartesian.y);
-    double angle = std::atan2(cartesian.y, cartesian.x);
-    
-    return PolarCoordinates{radius, angle};
-}
-
-// Convert Polar to Cartesian coordinates
-Coordinates toCartesian(const PolarCoordinates& polar) 
-{
-    double x = polar.radius * std::cos(polar.angle);
-    double y = polar.radius * std::sin(polar.angle);
-    
-    return Coordinates{x, y};
-}
-
-int main() 
-{
-    Coordinates point{3.0, 4.0};
-    std::cout << "Cartesian: (" << point.x << ", " << point.y << ")\n";
-    
-    PolarCoordinates polar = toPolar(point);
-    std::cout << "Polar: radius=" << polar.radius << ", angle=" << polar.angle << " rad\n";
-    
-    Coordinates converted = toCartesian(polar);
-    std::cout << "Back to Cartesian: (" << converted.x << ", " << converted.y << ")\n";
-    
-    return 0;
-}
-```
-
----
-
-## Advanced Applications
-
-### Template Structs
-
-Combine structs with templates for generic programming:
-
-```cpp
-#include <iostream>
-#include <string>
-
-template <typename T>
-struct Pair 
-{
-    T first;
-    T second;
-    
-    // Member functions
-    T sum() const { return first + second; }
-    T max() const { return (first > second) ? first : second; }
-    void swap() { std::swap(first, second); }
-};
-
-// Template specialization for string concatenation
-template <>
-std::string Pair<std::string>::sum() const 
-{
-    return first + " " + second;
-}
-
-int main() 
-{
-    Pair<int> numbers{10, 20};
-    std::cout << "Sum: " << numbers.sum() << '\n';        // 30
-    std::cout << "Max: " << numbers.max() << '\n';        // 20
-    
-    Pair<double> decimals{3.14, 2.71};
-    std::cout << "Sum: " << decimals.sum() << '\n';       // 5.85
-    
-    Pair<std::string> words{"Hello", "World"};
-    std::cout << "Combined: " << words.sum() << '\n';     // Hello World
-    
-    return 0;
-}
-```
-
-### Nested Structs and Complex Data
-
-```cpp
-#include <iostream>
-#include <string>
-#include <vector>
-
-struct Address 
-{
-    std::string street;
-    std::string city;
-    std::string state;
-    std::string zipCode;
-};
-
-struct Person 
-{
-    std::string firstName;
-    std::string lastName;
-    Address address;           // Nested struct
-    std::vector<std::string> phoneNumbers;
-    
-    // Member function
-    std::string fullName() const 
-    {
-        return firstName + " " + lastName;
-    }
-    
-    void displayInfo() const 
-    {
-        std::cout << "Name: " << fullName() << '\n';
-        std::cout << "Address: " << address.street << ", " 
-                  << address.city << ", " << address.state << " " << address.zipCode << '\n';
-        std::cout << "Phone numbers: ";
-        for (const auto& phone : phoneNumbers) 
-        {
-            std::cout << phone << " ";
-        }
-        std::cout << '\n';
-    }
-};
-
-int main() 
-{
-    Person john {
-        .firstName = "John",
-        .lastName = "Doe", 
-        .address = {
-            .street = "123 Main St",
-            .city = "Springfield",
-            .state = "IL",
-            .zipCode = "62701"
-        },
-        .phoneNumbers = {"555-1234", "555-5678"}
-    };
-    
-    john.displayInfo();
-    
-    return 0;
-}
-```
-
-### Data Validation and Invariants
-
-```cpp
-#include <iostream>
-#include <string>
-#include <stdexcept>
-
-struct Temperature 
-{
-    enum class Scale { Celsius, Fahrenheit, Kelvin };
-    
-    double value{};
-    Scale scale = Scale::Celsius;
-    
-    // Validation function
-    bool isValid() const 
-    {
-        switch (scale) 
-        {
-            case Scale::Celsius:    return value >= -273.15;
-            case Scale::Fahrenheit: return value >= -459.67;
-            case Scale::Kelvin:     return value >= 0.0;
-        }
-        return false;
-    }
-    
-    // Conversion functions
-    Temperature toCelsius() const 
-    {
-        if (!isValid()) throw std::invalid_argument("Invalid temperature");
-        
-        switch (scale) 
-        {
-            case Scale::Celsius:    return *this;
-            case Scale::Fahrenheit: return {(value - 32) * 5.0/9.0, Scale::Celsius};
-            case Scale::Kelvin:     return {value - 273.15, Scale::Celsius};
-        }
-        return {};
-    }
-    
-    void display() const 
-    {
-        char symbol = (scale == Scale::Celsius) ? 'C' : 
-                     (scale == Scale::Fahrenheit) ? 'F' : 'K';
-        std::cout << value << "°" << symbol;
-    }
-};
-
-int main() 
-{
-    Temperature room{22.5, Temperature::Scale::Celsius};
-    Temperature freezing{32.0, Temperature::Scale::Fahrenheit};
-    
-    std::cout << "Room temperature: ";
-    room.display();
-    std::cout << '\n';
-    
-    std::cout << "Freezing point in Fahrenheit: ";
-    freezing.display();
-    std::cout << " = ";
-    freezing.toCelsius().display();
-    std::cout << '\n';
-    
-    return 0;
-}
-```
-
----
-
-## Best Practices and Modern Usage
-
-### Do's ✅
-
-1. **Use enum class over plain enum**:
-```cpp
-enum class Status { ready, processing, complete };  // ✅ Type-safe
-```
-
-2. **Initialize struct members**:
-```cpp
-struct Point { double x{}, y{}, z{}; };  // ✅ Default values
-```
-
-3. **Use const references for function parameters**:
-```cpp
-void process(const LargeStruct& data) { /* ... */ }  // ✅ Efficient
-```
-
-4. **Group related data logically**:
-```cpp
-struct PlayerStats { int health, mana, experience; };  // ✅ Cohesive
-```
-
-### Don'ts ❌
-
-1. **Don't use magic numbers**:
-```cpp
-int gameState = 2;  // ❌ What is 2?
-```
-
-2. **Don't pass large structs by value**:
-```cpp
-void process(LargeStruct data) { /* ... */ }  // ❌ Expensive copy
-```
-
-3. **Don't compare different enum types**:
-```cpp
-if (color == fruit) { /* ... */ }  // ❌ Meaningless comparison
-```
-
-### Modern C++ Features
-
-```cpp
-// C++17: Structured bindings
-struct Point { double x, y; };
-Point p{3.0, 4.0};
-auto [x, y] = p;  // ✅ Decompose struct
-
-// C++20: Designated initializers
-Car tesla{.brand = "Tesla", .year = 2023};  // ✅ Clear intent
-
-// C++20: using enum
-using enum Color;
-if (paint == red) { /* ... */ }  // ✅ Less verbose
-```
-
----
-
-## Real-World Applications
-
-### Game Development
-
-```cpp
-enum class EntityType { Player, Enemy, Projectile, Powerup };
-
-struct GameObject 
-{
-    EntityType type;
-    double x{}, y{};
-    double velocityX{}, velocityY{};
-    int health = 100;
-    bool isActive = true;
-    
-    void update(double deltaTime) 
-    {
-        x += velocityX * deltaTime;
-        y += velocityY * deltaTime;
-    }
-};
-```
-
-### Configuration Management
-
-```cpp
-struct ServerConfig 
-{
-    std::string host = "localhost";
-    int port = 8080;
-    int maxConnections = 100;
-    bool enableLogging = true;
-    double timeoutSeconds = 30.0;
-};
-```
-
-### Data Analysis
-
-```cpp
-struct DataPoint 
-{
-    double timestamp;
-    double value;
-    std::string category;
-    bool isValid = true;
-};
-
-struct Statistics 
-{
-    double mean{}, median{}, stdDev{};
-    double min{}, max{};
-    size_t count{};
-};
-```
-
----
-
-## Conclusion
-
-Enumerations and structs are fundamental building blocks that enable:
-
-- **Type Safety** - Prevent meaningless operations and catch errors at compile time
-- **Code Organization** - Group related data and concepts together
-- **Self-Documenting Code** - Names convey meaning better than magic numbers
-- **Scalability** - Easy to extend and modify as requirements change
-- **Template Compatibility** - Work seamlessly with generic programming
-
-These user-defined types form the foundation for object-oriented programming (classes) and are essential for building robust, maintainable C++ applications. Next, we'll explore how structs evolve into full classes with encapsulation and member functions!
-
-**Next: Chapter 14-15 - Object-Oriented Programming (Classes and Encapsulation)**
-
-# Chapter 12: Compound Data Types - Pointers & References
-
-## Building from Templates: Why Compound Types Matter
-
-In Chapter 11, we learned how templates let us write generic code. But templates often work with **compound data types** - types that are built from other types. Understanding pointers and references is crucial for mastering templates, STL containers, and modern C++ programming.
-
----
-
-## 12.1 - Introduction to Compound Data Types
-
-### What Are Compound Data Types?
-
-**Compound data types** are types that are built from fundamental types or other compound types:
-
-```cpp
-// Fundamental types
-int x = 5;
-double y = 3.14;
-char c = 'A';
-
-// Compound types
-int* ptr;           // Pointer to int
-int& ref = x;       // Reference to int
-int arr[10];        // Array of ints
-std::string text;   // Class type (compound)
-```
-
-### Why Compound Types Are Essential
-
-```cpp
-// Without compound types, this is impossible:
-template <typename T>
-void processLargeObject(T obj)    // ❌ Expensive copy!
-{
-    // Process obj...
-}
-
-// With compound types, we can do this:
-template <typename T>
-void processLargeObject(const T& obj)    // ✅ Efficient reference!
-{
-    // Process obj without copying...
-}
-```
-
----
-
-## 12.2 - Value Categories: Lvalues and Rvalues
-
-### The Foundation of Modern C++
-
-Understanding **value categories** is essential for mastering references, move semantics, and template programming.
-
-### What Are Value Categories?
-
-Every expression in C++ has two properties:
-1. **Type** - what kind of data (int, double, etc.)
-2. **Value Category** - whether it evaluates to an object or a value
-
-```cpp
-int x = 5;          // x has type 'int' and is an lvalue
-int y = x + 1;      // x is lvalue, x+1 is rvalue, y is lvalue
-```
-
-### Lvalues: "Locator Values"
-
-An lvalue (pronounced "ell-value", short for "left value" or "locator value") is an expression that evaluates to an identifiable object or function:
-
-```cpp
-int main() 
-{
-    int x = 5;           // x is an lvalue (has identity, persists)
-    int arr[5];          // arr is an lvalue
-    const int c = 10;    // c is a non-modifiable lvalue
-    
-    // Lvalue expressions:
-    x;                   // ✅ Variable
-    arr[0];              // ✅ Array element
-    ++x;                 // ✅ Pre-increment returns lvalue
-    (x + y);             // ❌ This is actually an rvalue!
-    
-    return 0;
-}
-```
-
-### Rvalues: "Right Values"
-
-An rvalue is an expression that is not an lvalue. Rvalue expressions evaluate to a value:
-
-```cpp
-int getValue() { return 42; }
-
-int main() 
-{
-    int x = 5;
-    
-    // Rvalue expressions:
-    42;                  // ✅ Literal
-    x + 1;               // ✅ Arithmetic result
-    getValue();          // ✅ Function return value
-    x++;                 // ✅ Post-increment returns rvalue
-    static_cast<int>(3.14); // ✅ Cast result
-    
-    return 0;
-}
-```
-
-### Visual Test: Determining Value Categories
-
-Here's a practical way to test value categories:
-
-```cpp
-#include <iostream>
-#include <string>
-
-// T& is an lvalue reference - preferred for lvalues
-template <typename T>
-constexpr bool is_lvalue(T&) { return true; }
-
-// T&& is an rvalue reference - preferred for rvalues  
-template <typename T>
-constexpr bool is_lvalue(T&&) { return false; }
-
-#define TEST_CATEGORY(expr) \
-    std::cout << #expr << " is " << (is_lvalue(expr) ? "lvalue" : "rvalue") << '\n';
-
-int getNumber() { return 42; }
-
-int main() 
-{
-    int x = 5;
-    
-    TEST_CATEGORY(x);                    // lvalue
-    TEST_CATEGORY(42);                   // rvalue
-    TEST_CATEGORY(x + 1);                // rvalue  
-    TEST_CATEGORY(++x);                  // lvalue
-    TEST_CATEGORY(x++);                  // rvalue
-    TEST_CATEGORY(getNumber());          // rvalue
-    TEST_CATEGORY("Hello");              // lvalue (special case!)
-    TEST_CATEGORY(std::string("Hello")); // rvalue
-    
-    return 0;
-}
-```
-
-### Key Insight: Assignment Rules
-
-Assignment requires the left operand to be a modifiable lvalue expression and the right operand to be an rvalue expression:
-
-```cpp
-int main() 
-{
-    int x = 5, y = 10;
-    
-    x = y;              // ✅ lvalue = rvalue (y converts to rvalue)
-    x = 42;             // ✅ lvalue = rvalue
-    x = x + 1;          // ✅ lvalue = rvalue
-    
-    // 42 = x;          // ❌ rvalue = lvalue (illegal!)
-    // x + 1 = y;       // ❌ rvalue = rvalue (illegal!)
-    
-    return 0;
-}
-```
-
----
-
-## 12.3 - Lvalue References
-
-### What Are References?
-
-A **reference** acts as an alias for an existing object - it's essentially another name for the same memory location:
-
-```cpp
-int main() 
-{
-    int x = 5;           // Original variable
-    int& ref = x;        // ref is now an alias for x
-    
-    std::cout << x << '\n';      // Prints: 5
-    std::cout << ref << '\n';    // Prints: 5 (same object)
-    
-    ref = 10;                    // Changes x through ref
-    std::cout << x << '\n';      // Prints: 10
-    
-    x = 20;                      // Changes ref through x  
-    std::cout << ref << '\n';    // Prints: 20
-    
-    return 0;
-}
-```
-
-### Reference Rules and Limitations
-
-```cpp
-int main() 
-{
-    int x = 5, y = 10;
-    
-    // ✅ Valid reference declarations
-    int& ref1 = x;           // Must initialize when declared
-    int& ref2 = y;           // Each reference needs separate declaration
-    
-    // ❌ Invalid reference operations
-    // int& ref3;            // Error: references must be initialized
-    // ref1 = ref2;          // This assigns y's value to x (doesn't rebind ref1!)
-    // int& ref4 = 42;       // Error: can't bind to rvalue
-    
-    return 0;
-}
-```
-
-### References vs Pointers: First Look
-
-```cpp
-int main() 
-{
-    int x = 5, y = 10;
-    
-    // References
-    int& ref = x;        // Must initialize, becomes alias
-    ref = 20;            // Changes x to 20
-    // ref = &y;         // ❌ Can't rebind reference
-    
-    // Pointers (preview)
-    int* ptr = &x;       // Stores address of x
-    *ptr = 30;           // Changes x to 30
-    ptr = &y;            // ✅ Can point to different objects
-    
-    return 0;
-}
-```
-
----
-
-## 12.4 - Lvalue References to Const
-
-### The Power of Const References
-
-Lvalue references to const can bind to modifiable lvalues, non-modifiable lvalues, and rvalues:
-
-```cpp
-#include <iostream>
-
-void printValue(const int& value)    // Can accept any int expression
-{
-    std::cout << "Value: " << value << '\n';
-}
-
-int getValue() { return 42; }
-
-int main() 
-{
-    int x = 5;
-    const int c = 10;
-    
-    // const references can bind to anything!
-    printValue(x);           // ✅ Modifiable lvalue
-    printValue(c);           // ✅ Non-modifiable lvalue  
-    printValue(42);          // ✅ Rvalue literal
-    printValue(x + 1);       // ✅ Rvalue expression
-    printValue(getValue());  // ✅ Rvalue from function
-    
-    return 0;
-}
-```
-
-### Lifetime Extension Magic
-
-When a const reference is directly bound to a temporary, the lifetime of that temporary is extended to match the lifetime of the reference:
-
-```cpp
-#include <iostream>
-#include <string>
-
-int main() 
-{
-    // Without lifetime extension:
-    // auto temp = std::string("Hello") + " World";
-    // const std::string& ref = temp;  // Normal reference to existing object
-    
-    // With lifetime extension:
-    const std::string& ref = std::string("Hello") + " World";  // Temporary extended!
-    
-    std::cout << ref << '\n';  // ✅ Safe to use - temporary still alive
-    
-    return 0;
-}
-```
-
----
-
-## 12.7 - Introduction to Pointers
-
-### Understanding Memory Addresses
-
-When the code generated for this definition is executed, a piece of memory from RAM will be assigned to this object:
-
-```cpp
-#include <iostream>
-
-int main() 
-{
-    int x = 5;           // Assume assigned to address 1000
-    char c = 'A';        // Assume assigned to address 1004
-    double d = 3.14;     // Assume assigned to address 1008
-    
-    std::cout << "x value: " << x << ", address: " << &x << '\n';
-    std::cout << "c value: " << c << ", address: " << (void*)&c << '\n';  
-    std::cout << "d value: " << d << ", address: " << &d << '\n';
-    
-    return 0;
-}
-```
-
-### The Address-of Operator (&)
-
-The address-of operator (&) returns the memory address of its operand:
-
-```cpp
-#include <iostream>
-
-int main() 
-{
-    int x = 42;
-    double arr[3] = {1.1, 2.2, 3.3};
-    
-    std::cout << "Address of x: " << &x << '\n';
-    std::cout << "Address of arr[0]: " << &arr[0] << '\n';
-    std::cout << "Address of arr[1]: " << &arr[1] << '\n';
-    std::cout << "Address of arr[2]: " << &arr[2] << '\n';
-    
-    // Notice how array elements are contiguous in memory!
-    return 0;
-}
-```
-
-### The Dereference Operator (*)
-
-The dereference operator (*) returns the value at a given memory address as an lvalue:
-
-```cpp
-#include <iostream>
-
-int main() 
-{
-    int x = 100;
-    
-    std::cout << "Direct access: " << x << '\n';           // 100
-    std::cout << "Address: " << &x << '\n';                // e.g., 0x7fff5fbff6ac
-    std::cout << "Indirect access: " << *(&x) << '\n';     // 100
-    
-    // Address-of and dereference are opposites
-    // &x gets the address, *(&x) gets the value back
-    
-    return 0;
-}
-```
-
----
-
-## 12.8 - Pointer Fundamentals
-
-### Declaring and Initializing Pointers
-
-A pointer is an object that holds a memory address (typically of another variable) as its value:
-
-```cpp
-#include <iostream>
-
-int main() 
-{
-    int x = 5, y = 10;
-    
-    // Pointer declarations and initialization
-    int* ptr1;           // ❌ Uninitialized (wild pointer)
-    int* ptr2{};         // ✅ Null pointer
-    int* ptr3 = &x;      // ✅ Points to x
-    int* ptr4{&y};       // ✅ Points to y (preferred syntax)
-    
-    std::cout << "x = " << x << ", *ptr3 = " << *ptr3 << '\n';  // Both print 5
-    std::cout << "y = " << y << ", *ptr4 = " << *ptr4 << '\n';  // Both print 10
-    
-    return 0;
-}
-```
-
-### Pointer Assignment: Two Ways
-
-We can use assignment with pointers in two different ways: To change what the pointer is pointing at (by assigning the pointer a new address) To change the value being pointed at (by assigning the dereferenced pointer a new value):
-
-```cpp
-#include <iostream>
-
-int main() 
-{
-    int x = 5, y = 10, z = 15;
-    int* ptr = &x;
-    
-    std::cout << "Initially: *ptr = " << *ptr << '\n';  // 5
-    
-    // Method 1: Change what pointer points to
-    ptr = &y;
-    std::cout << "After ptr = &y: *ptr = " << *ptr << '\n';  // 10
-    
-    // Method 2: Change the value being pointed at
-    *ptr = 99;
-    std::cout << "After *ptr = 99: y = " << y << '\n';  // 99 (y changed!)
-    
-    return 0;
-}
-```
-
-### Pointers vs References Comparison
-
-Pointers and lvalue references behave similarly, but with key differences:
-
-```cpp
-#include <iostream>
-
-int main() 
-{
-    int x = 5, y = 10;
-    
-    // References
-    int& ref = x;        // Must initialize, becomes permanent alias
-    ref = 20;            // Changes x to 20
-    ref = y;             // ❌ This assigns y's VALUE to x, doesn't rebind!
-    
-    // Pointers  
-    int* ptr = &x;       // Initialize with address
-    *ptr = 30;           // Changes x to 30
-    ptr = &y;            // ✅ Now points to y instead
-    *ptr = 40;           // Changes y to 40
-    
-    std::cout << "x = " << x << ", y = " << y << '\n';  // x = 30, y = 40
-    
-    return 0;
-}
-```
-
-### Key Differences Summary
-
-| Feature | References | Pointers |
-|---------|------------|----------|
-| **Initialization** | Required | Optional (but should) |
-| **Rebinding** | ❌ Cannot | ✅ Can |
-| **Null State** | ❌ Must bind to object | ✅ Can be null |
-| **Arithmetic** | ❌ Not allowed | ✅ Supported |
-| **Memory Overhead** | None (alias) | Yes (stores address) |
-| **Syntax** | Implicit | Explicit (* and &) |
-| **Safety** | Safer | More dangerous |
-
----
-
-## Advanced Applications
-
-### Template Functions with References and Pointers
-
-Combining our knowledge with templates from Chapter 11:
-
-```cpp
-#include <iostream>
-#include <string>
-
-// Template function using const reference (efficient for large objects)
-template <typename T>
-void printTwice(const T& value) 
-{
-    std::cout << value << '\n';
-    std::cout << value << '\n';
-}
-
-// Template function using pointers (can handle optional parameters)
-template <typename T>
-void printIfNotNull(const T* ptr) 
-{
-    if (ptr != nullptr) 
-    {
-        std::cout << *ptr << '\n';
-    } 
-    else 
-    {
-        std::cout << "null pointer!\n";
-    }
-}
-
-int main() 
-{
-    std::string bigString = "This is a potentially large string object";
-    int number = 42;
-    
-    // Efficient - no copying of large string
-    printTwice(bigString);
-    printTwice(number);
-    
-    // Safe pointer handling
-    int* validPtr = &number;
-    int* nullPtr = nullptr;
-    
-    printIfNotNull(validPtr);    // Prints: 42
-    printIfNotNull(nullPtr);     // Prints: null pointer!
-    
-    return 0;
-}
-```
-
-### Smart Pointer Preview
-
-Modern C++ provides safer alternatives to raw pointers:
-
-```cpp
-#include <iostream>
-#include <memory>
-#include <string>
-
-int main() 
-{
-    // Raw pointer (dangerous)
-    int* rawPtr = new int(42);
-    std::cout << *rawPtr << '\n';
-    delete rawPtr;  // Must remember to delete!
-    
-    // Smart pointer (safe) - C++14
-    auto smartPtr = std::make_unique<int>(42);
-    std::cout << *smartPtr << '\n';
-    // Automatic cleanup - no delete needed!
-    
-    // Smart pointers work great with templates
-    auto smartString = std::make_unique<std::string>("Hello, Smart Pointers!");
-    std::cout << *smartString << '\n';
-    
-    return 0;
-}
-```
-
-### Reference Wrappers for Container Storage
-
-References can't be stored in containers, but we can use `std::reference_wrapper`:
+### Basic Lambda Syntax
 
 ```cpp
 #include <iostream>
 #include <vector>
+#include <algorithm>
 #include <functional>
 
-int main() 
-{
-    int a = 1, b = 2, c = 3;
+void basicLambdas() {
+    // Basic lambda syntax: [capture](parameters) -> return_type { body }
     
-    // Can't do: std::vector<int&> refs;  // ❌ Error!
+    // Simple lambda
+    auto greet = []() {
+        std::cout << "Hello, World!\n";
+    };
+    greet();
     
-    // Solution: use reference_wrapper
-    std::vector<std::reference_wrapper<int>> refs = {a, b, c};
+    // Lambda with parameters
+    auto add = [](int a, int b) {
+        return a + b;
+    };
+    std::cout << "3 + 4 = " << add(3, 4) << "\n";
     
-    // Modify through references
-    for (auto& ref : refs) 
-    {
-        ref.get() *= 2;  // Double each value
-    }
+    // Lambda with explicit return type
+    auto divide = [](double a, double b) -> double {
+        if (b != 0.0) {
+            return a / b;
+        }
+        throw std::invalid_argument("Division by zero");
+    };
     
-    std::cout << "a = " << a << ", b = " << b << ", c = " << c << '\n';
-    // Prints: a = 2, b = 4, c = 6
+    // Generic lambda (C++14)
+    auto generic_add = [](auto a, auto b) {
+        return a + b;
+    };
     
-    return 0;
+    std::cout << generic_add(1, 2) << "\n";      // int + int
+    std::cout << generic_add(1.5, 2.5) << "\n"; // double + double
+    std::cout << generic_add(std::string("Hello"), std::string(" World")) << "\n"; // string + string
 }
 ```
 
----
-
-## Best Practices and Common Pitfalls
-
-### Do's ✅
-
-1. **Always initialize pointers**:
-```cpp
-int* ptr = nullptr;     // ✅ Safe default
-int* ptr = &variable;   // ✅ Point to valid object
-```
-
-2. **Use const references for function parameters**:
-```cpp
-template <typename T>
-void process(const T& obj) {  // ✅ Efficient, safe
-    // Read-only access to obj
-}
-```
-
-3. **Prefer references when you don't need rebinding**:
-```cpp
-void increment(int& value) {  // ✅ Clear intent
-    ++value;
-}
-```
-
-4. **Check pointers before dereferencing**:
-```cpp
-if (ptr != nullptr) {   // ✅ Safe
-    std::cout << *ptr;
-}
-```
-
-### Don'ts ❌
-
-1. **Don't use uninitialized pointers**:
-```cpp
-int* ptr;          // ❌ Wild pointer
-std::cout << *ptr; // ❌ Undefined behavior
-```
-
-2. **Don't dereference dangling pointers**:
-```cpp
-int* ptr = nullptr;
-{
-    int x = 5;
-    ptr = &x;
-}  // x destroyed here
-std::cout << *ptr;  // ❌ Undefined behavior
-```
-
-3. **Don't confuse assignment vs rebinding**:
-```cpp
-int x = 5, y = 10;
-int& ref = x;
-ref = y;        // ❌ This assigns y's VALUE to x, doesn't rebind!
-```
-
-### Memory Management Best Practices
-
-```cpp
-#include <memory>
-
-// ❌ Manual memory management (error-prone)
-void badExample() 
-{
-    int* ptr = new int(42);
-    // ... do work ...
-    delete ptr;  // Easy to forget or miss on exception!
-}
-
-// ✅ RAII with smart pointers
-void goodExample() 
-{
-    auto ptr = std::make_unique<int>(42);
-    // ... do work ...
-    // Automatic cleanup, exception-safe
-}
-
-// ✅ Stack allocation when possible
-void bestExample() 
-{
-    int value = 42;  // No dynamic allocation needed
-    // ... do work ...
-    // Automatic cleanup
-}
-```
-
----
-
-## Real-World Applications
-
-### Implementing a Generic Swap Function
-
-```cpp
-template <typename T>
-void swap(T& a, T& b) 
-{
-    T temp = a;  // Copy a
-    a = b;       // Copy b to a
-    b = temp;    // Copy temp to b
-}
-
-// More efficient for large objects (uses pointers internally)
-template <typename T>
-void swapPtr(T* a, T* b) 
-{
-    if (a && b) {  // Safety check
-        T temp = *a;
-        *a = *b;
-        *b = temp;
-    }
-}
-
-int main() 
-{
-    int x = 10, y = 20;
-    std::cout << "Before: x=" << x << ", y=" << y << '\n';
-    
-    swap(x, y);
-    std::cout << "After: x=" << x << ", y=" << y << '\n';
-    
-    return 0;
-}
-```
-
-### Building Linked Data Structures
+### Capture Mechanisms
 
 ```cpp
 #include <iostream>
+#include <vector>
+#include <algorithm>
 #include <memory>
 
-template <typename T>
-struct Node 
-{
-    T data;
-    std::unique_ptr<Node<T>> next;
+void demonstrateCaptures() {
+    int x = 10;
+    int y = 20;
     
-    Node(T value) : data(value), next(nullptr) {}
+    // Capture by value
+    auto lambda1 = [x, y](int z) {
+        return x + y + z;  // x and y are copied
+    };
+    
+    // Capture by reference
+    auto lambda2 = [&x, &y](int z) {
+        x += z;  // Modifies original x
+        return x + y;
+    };
+    
+    // Capture all by value
+    auto lambda3 = [=](int z) {
+        return x + y + z;  // All variables copied
+    };
+    
+    // Capture all by reference
+    auto lambda4 = [&](int z) {
+        x += z;  // All variables by reference
+        return x + y;
+    };
+    
+    // Mixed capture
+    auto lambda5 = [=, &x](int z) {
+        x += z;      // x by reference
+        return x + y + z;  // y by value
+    };
+    
+    // Init capture (C++14)
+    auto lambda6 = [captured_value = x * 2](int z) {
+        return captured_value + z;
+    };
+    
+    // Move capture
+    auto resource = std::make_unique<int>(42);
+    auto lambda7 = [moved_resource = std::move(resource)](int multiplier) {
+        return *moved_resource * multiplier;
+    };
+    
+    std::cout << lambda1(5) << "\n";  // 35
+    std::cout << lambda6(8) << "\n";  // 28 (x*2 + 8)
+    std::cout << lambda7(3) << "\n";  // 126 (42 * 3)
+}
+```
+
+### Lambdas with STL Algorithms
+
+```cpp
+#include <vector>
+#include <algorithm>
+#include <numeric>
+#include <iostream>
+#include <string>
+#include <map>
+
+struct Product {
+    std::string name;
+    double price;
+    int quantity;
+    
+    double totalValue() const { return price * quantity; }
 };
 
-template <typename T>
-class LinkedList 
-{
+void lambdasWithSTL() {
+    std::vector<Product> inventory = {
+        {"Laptop", 999.99, 10},
+        {"Mouse", 25.50, 50},
+        {"Keyboard", 75.00, 30},
+        {"Monitor", 299.99, 15},
+        {"Speaker", 150.00, 25}
+    };
+    
+    // Find expensive items
+    auto expensive_threshold = 100.0;
+    auto expensive_count = std::count_if(inventory.begin(), inventory.end(),
+        [expensive_threshold](const Product& p) {
+            return p.price > expensive_threshold;
+        });
+    
+    std::cout << "Products over $" << expensive_threshold << ": " << expensive_count << "\n";
+    
+    // Sort by total value (price * quantity)
+    std::sort(inventory.begin(), inventory.end(),
+        [](const Product& a, const Product& b) {
+            return a.totalValue() > b.totalValue();  // Descending order
+        });
+    
+    std::cout << "Most valuable inventory item: " << inventory[0].name 
+              << " ($" << inventory[0].totalValue() << ")\n";
+    
+    // Transform to create a summary
+    std::vector<std::string> summaries;
+    std::transform(inventory.begin(), inventory.end(), std::back_inserter(summaries),
+        [](const Product& p) {
+            return p.name + ": $" + std::to_string(p.totalValue());
+        });
+    
+    // Calculate total inventory value
+    auto total_value = std::accumulate(inventory.begin(), inventory.end(), 0.0,
+        [](double sum, const Product& p) {
+            return sum + p.totalValue();
+        });
+    
+    std::cout << "Total inventory value: $" << total_value << "\n";
+    
+    // Group products by price range
+    std::map<std::string, std::vector<Product>> price_groups;
+    std::for_each(inventory.begin(), inventory.end(),
+        [&price_groups](const Product& p) {
+            std::string category;
+            if (p.price < 50.0) category = "Budget";
+            else if (p.price < 200.0) category = "Mid-range";
+            else category = "Premium";
+            
+            price_groups[category].push_back(p);
+        });
+    
+    for (const auto& [category, products] : price_groups) {
+        std::cout << category << " products: " << products.size() << "\n";
+    }
+}
+```
+
+### Advanced Lambda Features
+
+```cpp
+#include <iostream>
+#include <functional>
+#include <vector>
+#include <memory>
+
+// Recursive lambda (C++14 with auto)
+void recursiveLambda() {
+    std::function<int(int)> factorial = [&factorial](int n) -> int {
+        return (n <= 1) ? 1 : n * factorial(n - 1);
+    };
+    
+    std::cout << "5! = " << factorial(5) << "\n";
+    
+    // Y combinator style recursive lambda
+    auto make_recursive = [](auto f) {
+        return [f](auto&&... args) {
+            return f(f, std::forward<decltype(args)>(args)...);
+        };
+    };
+    
+    auto fib = make_recursive([](auto f, int n) -> int {
+        return (n <= 1) ? n : f(f, n-1) + f(f, n-2);
+    });
+    
+    std::cout << "fib(10) = " << fib(10) << "\n";
+}
+
+// Lambda as template parameter
+template<typename Container, typename Predicate>
+auto filter(const Container& container, Predicate pred) {
+    Container result;
+    std::copy_if(container.begin(), container.end(), std::back_inserter(result), pred);
+    return result;
+}
+
+// Higher-order functions
+template<typename F>
+auto curry(F&& f) {
+    return [f = std::forward<F>(f)](auto&& arg1) {
+        return [f, arg1 = std::forward<decltype(arg1)>(arg1)](auto&& arg2) {
+            return f(arg1, std::forward<decltype(arg2)>(arg2));
+        };
+    };
+}
+
+void advancedLambdaFeatures() {
+    // Lambda templates (C++20)
+    auto generic_lambda = []<typename T>(T&& value) {
+        std::cout << "Processing: " << value << " of type " << typeid(T).name() << "\n";
+        return std::forward<T>(value);
+    };
+    
+    generic_lambda(42);
+    generic_lambda("Hello");
+    
+    // Using lambdas with custom algorithms
+    std::vector<int> numbers = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    auto evens = filter(numbers, [](int n) { return n % 2 == 0; });
+    
+    std::cout << "Even numbers: ";
+    for (int n : evens) {
+        std::cout << n << " ";
+    }
+    std::cout << "\n";
+    
+    // Currying example
+    auto add = [](int a, int b) { return a + b; };
+    auto curried_add = curry(add);
+    auto add_five = curried_add(5);
+    
+    std::cout << "5 + 3 = " << add_five(3) << "\n";
+}
+
+// Lambda in class context
+class EventHandler {
 private:
-    std::unique_ptr<Node<T>> head;
+    std::vector<std::function<void()>> handlers_;
     
 public:
-    void push_front(T value) 
-    {
-        auto newNode = std::make_unique<Node<T>>(value);
-        newNode->next = std::move(head);
-        head = std::move(newNode);
+    void addHandler(std::function<void()> handler) {
+        handlers_.push_back(handler);
     }
     
-    void print() const 
-    {
-        Node<T>* current = head.get();  // Raw pointer for traversal
-        while (current != nullptr) 
-        {
-            std::cout << current->data << " -> ";
-            current = current->next.get();
+    void processEvents() {
+        for (auto& handler : handlers_) {
+            handler();
         }
-        std::cout << "null\n";
     }
 };
 
-int main() 
-{
-    LinkedList<int> list;
-    list.push_front(3);
-    list.push_front(2);
-    list.push_front(1);
-    list.print();  // Prints: 1 -> 2 -> 3 -> null
+void lambdaInClassContext() {
+    EventHandler eventSystem;
     
-    return 0;
-}
-```
-
----
-
-## Conclusion
-
-Understanding pointers and references is foundational to mastering:
-
-- **Template programming** (efficient parameter passing)
-- **STL containers** (iterators are sophisticated pointers)
-- **Object relationships** (composition, aggregation)
-- **Memory management** (smart pointers, RAII)
-- **Performance optimization** (avoiding unnecessary copies)
-
-The concepts in this chapter directly enable the advanced C++ features we'll explore next, particularly STL containers, algorithms, and modern memory management techniques. The distinction between lvalues and rvalues becomes even more important when we discuss move semantics in later chapters.
-
-Next up: **Chapter 13 - Enumerations and Structs**, which will show how to create our own compound data types!
-
-# Chapter 11: Function Overloading and Templates
-
-## Building from Constexpr: The Need for Generic Programming
-
-In Chapter F, we learned about constexpr functions that can execute at compile-time. But what happens when we need the same functionality for different types? This is where function templates become essential, providing the missing piece for truly generic programming.
-
----
-
-## 11.1 - Introduction to Function Overloading
-
-### The Basic Problem
-
-Consider this simple function:
-
-```cpp
-int add(int x, int y) 
-{
-    return x + y;
-}
-```
-
-This works great for integers, but what about floating-point numbers? You'd need to create separate functions:
-
-```cpp
-int add(int x, int y) 
-{
-    return x + y;
-}
-
-double add(double x, double y) 
-{
-    return x + y;
-}
-
-float add(float x, float y) 
-{
-    return x + y;
-}
-```
-
-### Function Overloading Rules
-
-**Function overloading** allows multiple functions with the same name, provided they have different parameter types:
-
-```cpp
-#include <iostream>
-
-// Overloaded functions for different types
-void print(int value) 
-{
-    std::cout << "Printing int: " << value << '\n';
-}
-
-void print(double value) 
-{
-    std::cout << "Printing double: " << value << '\n';
-}
-
-void print(const std::string& value) 
-{
-    std::cout << "Printing string: " << value << '\n';
-}
-
-int main() 
-{
-    print(42);           // Calls print(int)
-    print(3.14);         // Calls print(double)
-    print("Hello");      // Calls print(const std::string&)
-    return 0;
-}
-```
-
-### Overloading Rules:
-- ✅ **Different parameter types**
-- ✅ **Different number of parameters**
-- ✅ **Different parameter order** (if types differ)
-- ❌ **Return type alone** (not sufficient for overloading)
-
----
-
-## 11.2 - Function Overload Resolution
-
-### How the Compiler Chooses
-
-When you call an overloaded function, the compiler uses **overload resolution** to determine which function to call:
-
-```cpp
-void func(int x) { std::cout << "int version\n"; }
-void func(double x) { std::cout << "double version\n"; }
-void func(const std::string& x) { std::cout << "string version\n"; }
-
-int main() 
-{
-    func(42);        // Exact match: calls func(int)
-    func(3.14);      // Exact match: calls func(double)
-    func(42.0f);     // Promotion: float→double, calls func(double)
-    func("Hello");   // Conversion: const char*→std::string, calls func(const std::string&)
-    return 0;
-}
-```
-
-### Resolution Priority:
-1. **Exact match** (including const/reference conversions)
-2. **Promotions** (int→long, float→double)
-3. **Standard conversions** (int→double, derived→base)
-4. **User-defined conversions**
-5. **Ellipsis matches**
-
----
-
-## 11.6 - Function Templates: The Generic Solution
-
-### The Problem with Overloading
-
-Writing multiple overloads is a maintenance nightmare:
-
-```cpp
-// Repetitive and error-prone!
-int max(int x, int y) { return (x < y) ? y : x; }
-double max(double x, double y) { return (x < y) ? y : x; }
-float max(float x, float y) { return (x < y) ? y : x; }
-long max(long x, long y) { return (x < y) ? y : x; }
-// ... and so on for every type!
-```
-
-### Enter Function Templates
-
-A **function template** is a blueprint that generates functions for different types:
-
-```cpp
-template <typename T>
-T max(T x, T y) 
-{
-    return (x < y) ? y : x;
-}
-
-int main() 
-{
-    std::cout << max<int>(5, 3) << '\n';      // Generates max<int>
-    std::cout << max<double>(2.7, 4.1) << '\n'; // Generates max<double>
-    std::cout << max<char>('a', 'z') << '\n';    // Generates max<char>
-    return 0;
-}
-```
-
-### Template Syntax Breakdown
-
-```cpp
-template <typename T>  // Template parameter declaration
-T max(T x, T y)       // Function template definition
-{
-    return (x < y) ? y : x;
-}
-```
-
-- `template` - Keyword indicating this is a template
-- `<typename T>` - Template parameter list (T is a placeholder type)
-- `T` - Can be replaced with any actual type
-- `typename` - Preferred over `class` (both work the same)
-
----
-
-## 11.7 - Function Template Instantiation
-
-### How Templates Work
-
-Templates don't generate code until they're used. When you call a template function, the compiler performs **instantiation**:
-
-```cpp
-template <typename T>
-T square(T x) 
-{
-    return x * x;
-}
-
-int main() 
-{
-    auto result1 = square<int>(5);    // Instantiates square<int>
-    auto result2 = square<double>(3.14); // Instantiates square<double>
-    return 0;
-}
-```
-
-The compiler essentially generates these functions:
-
-```cpp
-// Generated by the compiler
-int square<int>(int x) 
-{
-    return x * x;
-}
-
-double square<double>(double x) 
-{
-    return x * x;
-}
-```
-
-### Template Argument Deduction
-
-You usually don't need to specify the template type explicitly:
-
-```cpp
-template <typename T>
-T add(T x, T y) 
-{
-    return x + y;
-}
-
-int main() 
-{
-    // All equivalent calls:
-    auto result1 = add<int>(5, 3);    // Explicit template argument
-    auto result2 = add<>(5, 3);       // Empty angle brackets
-    auto result3 = add(5, 3);         // Template argument deduction (preferred)
+    std::string message = "Event processed";
+    int counter = 0;
     
-    return 0;
-}
-```
-
-### Template Argument Deduction Rules
-
-The compiler deduces template arguments from function arguments:
-
-```cpp
-template <typename T>
-void print(T value) 
-{
-    std::cout << value << '\n';
-}
-
-int main() 
-{
-    print(42);        // T deduced as int
-    print(3.14);      // T deduced as double
-    print("Hello");   // T deduced as const char*
-    print('A');       // T deduced as char
-    return 0;
+    // Lambda capturing class context
+    eventSystem.addHandler([&message, &counter]() {
+        std::cout << message << " #" << ++counter << "\n";
+    });
+    
+    eventSystem.addHandler([]() {
+        std::cout << "Another event handler\n";
+    });
+    
+    eventSystem.processEvents();
+    eventSystem.processEvents();
 }
 ```
 
 ---
 
-## 11.8 - Function Templates with Multiple Template Types
+## 26.1 - Advanced Template Programming
 
-### The Limitation of Single Type Templates
-
-```cpp
-template <typename T>
-T max(T x, T y)  // Both parameters must be the same type!
-{
-    return (x < y) ? y : x;
-}
-
-int main() 
-{
-    // max(5, 3.14); // ❌ ERROR: Can't deduce T (int vs double)
-    return 0;
-}
-```
-
-### Solution: Multiple Template Parameters
-
-```cpp
-template <typename T, typename U>
-auto max(T x, U y) -> decltype(x < y ? y : x)  // C++11 trailing return type
-{
-    return (x < y) ? y : x;
-}
-
-// Or in C++14+, simply:
-template <typename T, typename U>
-auto max(T x, U y) 
-{
-    return (x < y) ? y : x;
-}
-
-int main() 
-{
-    std::cout << max(5, 3.14) << '\n';    // T=int, U=double, returns double
-    std::cout << max(2.5, 1) << '\n';     // T=double, U=int, returns double
-    return 0;
-}
-```
-
-### Advanced Template Techniques
-
-#### Template Specialization for Type Safety
+### Variadic Templates
 
 ```cpp
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <type_traits>
 
-template <typename T>
-T addOne(T x) 
-{
-    return x + 1;
+// Basic variadic template
+template<typename... Args>
+void print(Args&&... args) {
+    ((std::cout << args << " "), ...);  // C++17 fold expression
+    std::cout << "\n";
 }
 
-// Specialized version for strings - delete to prevent compilation
-template <>
-std::string addOne<std::string>(std::string x) = delete;
-
-int main() 
-{
-    std::cout << addOne(5) << '\n';       // ✅ Works: returns 6
-    std::cout << addOne(3.14) << '\n';    // ✅ Works: returns 4.14
-    // addOne(std::string("Hello"));      // ❌ Compile error: function deleted
-    return 0;
-}
-```
-
----
-
-## Advanced Template Features
-
-### Constexpr Function Templates
-
-Combining templates with constexpr for compile-time generic programming:
-
-```cpp
-template <typename T>
-constexpr T factorial(T n) 
-{
-    return (n <= 1) ? 1 : n * factorial(n - 1);
+// Recursive variadic template (pre-C++17 style)
+template<typename First>
+void print_recursive(First&& first) {
+    std::cout << first << "\n";
 }
 
-int main() 
-{
-    constexpr int fact5 = factorial(5);        // Computed at compile-time
-    constexpr long fact10 = factorial(10L);    // Different type, still compile-time
-    
-    std::cout << "5! = " << fact5 << '\n';
-    std::cout << "10! = " << fact10 << '\n';
-    return 0;
-}
-```
-
-### Template with Non-Template Parameters
-
-```cpp
-template <typename T>
-void repeat(T value, int times = 1) 
-{
-    for (int i = 0; i < times; ++i) 
-    {
-        std::cout << value << ' ';
-    }
-    std::cout << '\n';
+template<typename First, typename... Rest>
+void print_recursive(First&& first, Rest&&... rest) {
+    std::cout << first << " ";
+    print_recursive(rest...);
 }
 
-int main() 
-{
-    repeat("Hello", 3);    // Template: T=const char*, Non-template: times=3
-    repeat(42, 2);         // Template: T=int, Non-template: times=2
-    repeat(3.14);          // Template: T=double, Non-template: times=1 (default)
-    return 0;
-}
-```
-
-### Template Parameter Naming Conventions
-
-```cpp
-// Simple, obvious usage - single letters
-template <typename T>
-T simple(T value) { return value; }
-
-template <typename T, typename U, typename V>
-auto complex(T a, U b, V c) { return a + b + c; }
-
-// Complex usage - descriptive names
-template <typename Container, typename Predicate>
-void processIf(Container& container, Predicate pred) 
-{
-    // Implementation...
+// Perfect forwarding with variadic templates
+template<typename T, typename... Args>
+std::unique_ptr<T> make_unique_variadic(Args&&... args) {
+    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
-// Standard library style
-template <typename InputIt, typename OutputIt, typename Comparator>
-OutputIt customSort(InputIt first, InputIt last, OutputIt result, Comparator comp)
-{
-    // Implementation...
-}
-```
-
----
-
-## Real-World Applications
-
-### Generic Algorithms
-
-```cpp
-template <typename T>
-void bubbleSort(T arr[], int size) 
-{
-    for (int i = 0; i < size - 1; ++i) 
-    {
-        for (int j = 0; j < size - i - 1; ++j) 
-        {
-            if (arr[j] > arr[j + 1]) 
-            {
-                T temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
-            }
-        }
-    }
-}
-
-int main() 
-{
-    int intArr[] = {64, 34, 25, 12, 22, 11, 90};
-    double doubleArr[] = {3.1, 2.5, 1.8, 4.2};
-    
-    bubbleSort(intArr, 7);        // Works with int
-    bubbleSort(doubleArr, 4);     // Works with double
-    
-    return 0;
-}
-```
-
-### Type-Safe Containers
-
-```cpp
-template <typename T>
-class SimpleVector 
-{
-private:
-    T* data;
-    size_t size;
-    size_t capacity;
-
+class ComplexObject {
 public:
-    explicit SimpleVector(size_t initialCapacity = 10) 
-        : data(new T[initialCapacity]), size(0), capacity(initialCapacity) {}
-    
-    ~SimpleVector() { delete[] data; }
-    
-    void push_back(const T& item) 
-    {
-        if (size >= capacity) resize();
-        data[size++] = item;
+    ComplexObject(const std::string& name, int value, double rate) 
+        : name_(name), value_(value), rate_(rate) {
+        std::cout << "ComplexObject created: " << name_ << "\n";
     }
     
-    T& operator[](size_t index) { return data[index]; }
-    const T& operator[](size_t index) const { return data[index]; }
-    
-    size_t getSize() const { return size; }
-
 private:
-    void resize() 
-    {
-        capacity *= 2;
-        T* newData = new T[capacity];
-        for (size_t i = 0; i < size; ++i) 
-        {
-            newData[i] = data[i];
-        }
-        delete[] data;
-        data = newData;
-    }
+    std::string name_;
+    int value_;
+    double rate_;
 };
 
-int main() 
-{
-    SimpleVector<int> intVec;
-    SimpleVector<std::string> stringVec;
+// Variadic template for string formatting
+template<typename... Args>
+std::string format_string(const std::string& format, Args&&... args) {
+    std::ostringstream oss;
+    format_impl(oss, format, std::forward<Args>(args)...);
+    return oss.str();
+}
+
+template<typename T>
+void format_impl(std::ostringstream& oss, const std::string& format, T&& value) {
+    size_t pos = format.find("{}");
+    if (pos != std::string::npos) {
+        oss << format.substr(0, pos) << value << format.substr(pos + 2);
+    } else {
+        oss << format;
+    }
+}
+
+template<typename T, typename... Args>
+void format_impl(std::ostringstream& oss, const std::string& format, T&& value, Args&&... args) {
+    size_t pos = format.find("{}");
+    if (pos != std::string::npos) {
+        oss << format.substr(0, pos) << value;
+        format_impl(oss, format.substr(pos + 2), std::forward<Args>(args)...);
+    } else {
+        oss << format;
+    }
+}
+
+void demonstrateVariadicTemplates() {
+    // Basic usage
+    print("Hello", "World", 42, 3.14, true);
+    print_recursive("Recursive:", 1, 2, 3);
     
-    intVec.push_back(1);
-    intVec.push_back(2);
+    // Perfect forwarding
+    auto obj = make_unique_variadic<ComplexObject>("Test", 100, 2.5);
     
-    stringVec.push_back("Hello");
-    stringVec.push_back("World");
+    // String formatting
+    std::string result = format_string("Value: {}, Rate: {}, Active: {}", 42, 3.14, true);
+    std::cout << result << "\n";
+}
+```
+
+### SFINAE and Template Metaprogramming
+
+```cpp
+#include <iostream>
+#include <type_traits>
+#include <vector>
+#include <string>
+
+// SFINAE (Substitution Failure Is Not An Error) examples
+
+// Enable function only for integral types
+template<typename T>
+std::enable_if_t<std::is_integral_v<T>, void>
+process_integral(T value) {
+    std::cout << "Processing integral value: " << value << "\n";
+}
+
+// Enable function only for floating point types
+template<typename T>
+std::enable_if_t<std::is_floating_point_v<T>, void>
+process_floating_point(T value) {
+    std::cout << "Processing floating point value: " << value << "\n";
+}
+
+// Detect if a type has a specific member function
+template<typename T, typename = void>
+struct has_size : std::false_type {};
+
+template<typename T>
+struct has_size<T, std::void_t<decltype(std::declval<T>().size())>> : std::true_type {};
+
+template<typename T>
+constexpr bool has_size_v = has_size<T>::value;
+
+// Function overloading based on type traits
+template<typename Container>
+std::enable_if_t<has_size_v<Container>, size_t>
+get_size(const Container& container) {
+    return container.size();
+}
+
+template<typename T>
+std::enable_if_t<!has_size_v<T>, size_t>
+get_size(const T&) {
+    return 1;  // Assume single element for non-containers
+}
+
+// if constexpr (C++17) - compile-time conditional
+template<typename T>
+void process_value(T value) {
+    if constexpr (std::is_integral_v<T>) {
+        std::cout << "Integral: " << value << " (squared: " << value * value << ")\n";
+    } else if constexpr (std::is_floating_point_v<T>) {
+        std::cout << "Float: " << value << " (sqrt: " << std::sqrt(value) << ")\n";
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        std::cout << "String: '" << value << "' (length: " << value.length() << ")\n";
+    } else {
+        std::cout << "Other type\n";
+    }
+}
+
+void demonstrateSFINAE() {
+    // Type-based function selection
+    process_integral(42);
+    process_floating_point(3.14);
     
-    return 0;
+    // Member detection
+    std::vector<int> vec = {1, 2, 3, 4, 5};
+    std::string str = "hello";
+    int single_value = 42;
+    
+    std::cout << "Vector size: " << get_size(vec) << "\n";
+    std::cout << "String size: " << get_size(str) << "\n";
+    std::cout << "Int 'size': " << get_size(single_value) << "\n";
+    
+    // if constexpr usage
+    process_value(42);
+    process_value(3.14);
+    process_value(std::string("Hello"));
 }
 ```
 
----
+### Template Specialization and Concepts (C++20)
 
-## Best Practices and Common Pitfalls
-
-### Do's:
-✅ **Use template argument deduction** when possible  
-✅ **Start with regular functions, convert to templates when needed**  
-✅ **Use meaningful names for non-trivial template parameters**  
-✅ **Combine with constexpr for compile-time computation**  
-✅ **Write comprehensive tests for different types**  
-
-### Don'ts:
-❌ **Don't overuse templates for simple, type-specific functions**  
-❌ **Don't ignore compiler error messages** (though they're complex)  
-❌ **Don't assume all types will work** without testing  
-❌ **Don't create overly complex template hierarchies**  
-
-### Common Pitfalls:
-
-#### 1. Template Bloat
 ```cpp
-// This creates separate functions for every type used
-template <typename T>
-void heavyFunction(T value) 
-{
-    // Lots of code here...
-    // Each instantiation duplicates all this code
-}
-```
+#include <iostream>
+#include <vector>
+#include <concepts>
+#include <type_traits>
 
-#### 2. Cryptic Error Messages
-```cpp
-template <typename T>
-T badFunction(T x) 
-{
-    return x.nonexistentMethod(); // Will generate confusing errors
-}
-```
-
-#### 3. Static Variable Surprises
-```cpp
-template <typename T>
-void counter(T) 
-{
-    static int count = 0;    // Separate counter for each type!
-    std::cout << ++count << '\n';
-}
-
-int main() 
-{
-    counter(1);      // Prints 1
-    counter(2);      // Prints 2 (same int counter)
-    counter(3.14);   // Prints 1 (new double counter!)
-    return 0;
-}
-```
-
----
-
-## The Power of Generic Programming
-
-Function templates represent a paradigm shift from type-specific programming to **generic programming**, where we focus on algorithms and logic rather than specific types. This approach:
-
-- **Reduces code duplication**
-- **Improves maintainability**
-- **Enhances type safety**
-- **Enables powerful abstractions**
-- **Facilitates code reuse**
-
-When combined with constexpr functions from Chapter F, templates enable both **compile-time computation** and **generic programming**, forming the foundation of modern C++'s powerful template system that we'll see extensively in the Standard Template Library (STL).
-
-Next, we'll explore how templates extend to classes and more advanced template metaprogramming techniques!
+// Template specialization
+template<typename T>
+class Container {
+public
 
 # Advanced Functions: Constexpr and Consteval (Chapter F)
 
