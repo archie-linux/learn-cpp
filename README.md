@@ -8,3 +8,9 @@ Enhanced C++ tutorials building upon its original source:
   - Practical code examples accompanied by detailed comments
 
 Download Markdown Viewer: https://typora.io/
+
+**P.S.** __*Putting an end to all the free community service work and entertainment until I land legit contract work in a foreign land.*__
+
+#StopTheSlop
+
+__*End The 2 year Code-Commit/Comment/Post (CCP)-Reject Cycle*__
